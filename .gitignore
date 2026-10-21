@@ -1,0 +1,43 @@
+# Local project instructions (including the existing misspelled filename)
+/docs/instruction.md
+/docs/instuction.md
+
+# Visual Studio local settings and caches
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.db-shm
+*.VC.db-wal
+*.VC.opendb
+ipch/
+
+# Build output directories
+[Dd]ebug/
+[Rr]elease/
+[Dd]ebugPublic/
+x64/
+x86/
+Win32/
+ARM/
+ARM64/
+
+# C++ compiler, linker and resource editor output
+*.obj
+*.pch
+*.pdb
+*.idb
+*.ipdb
+*.iobj
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.res
+*.aps
+*.tlog
+*.lastbuildstate
+*.VC.VC.opendb
