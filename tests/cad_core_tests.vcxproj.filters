@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="core">
+      <UniqueIdentifier>{81F73991-5F7B-412D-ABCE-51264D3D2CCF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="geometry">
+      <UniqueIdentifier>{9FD6B72F-E58D-4C56-BDA5-6F4D904A7094}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="TestsMain.cpp" />
+    <ClCompile Include="core\DocumentTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="geometry\Vec2Tests.cpp">
+      <Filter>geometry</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TestSupport.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+    <None Include="run-tests.cmd" />
+    <None Include="run-tests.ps1" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Projecr1_GK.vcxproj" />
+  <Project Path="cad_core/cad_core.vcxproj" />
+  <Project Path="tests/cad_core_tests.vcxproj" />
+</Solution>
