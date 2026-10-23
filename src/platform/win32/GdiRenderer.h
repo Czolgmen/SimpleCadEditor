@@ -9,6 +9,9 @@
 #endif
 
 #include <windows.h>
+#include <optional>
+#include <cad_core/model/Id.h>
+
 
 namespace cad
 {
@@ -17,5 +20,5 @@ namespace cad
 
 namespace cad::win32
 {
-    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect);
+    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex);
 }

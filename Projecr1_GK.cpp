@@ -7,6 +7,9 @@
 #include <platform/win32/AppState.h>
 #include <platform/win32/GdiRenderer.h>
 #include <cad_core/demo/DemoScene.hpp>
+#include <editor/HitTester.h>
+
+#include <windowsx.h>
 
 
 #define MAX_LOADSTRING 100
@@ -80,7 +83,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     wcex.hInstance      = hInstance;
     wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_PROJECR1GK));
     wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+    wcex.hbrBackground  = nullptr;
     wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_PROJECR1GK);
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
@@ -130,6 +133,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_LBUTTONDOWN:
+    {
+        auto* state = reinterpret_cast<cad::win32::AppState*>(
+                GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+
+        if (!state)
+            return 0;
+
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
+
+        RECT clientRect{};
+        GetClientRect(hWnd, &clientRect);
+
+        const cad::Vec2 worldPosition{
+            static_cast<double>(x - 20),
+            static_cast<double>(clientRect.bottom - 20 - y)
+        };
+
+        state->selection.vertex = cad::editor::hitTestVertex(state->document, worldPosition, 6.0);
+
+        InvalidateRect(hWnd, nullptr, FALSE);
+
+        return 0;
+        break;
+    }
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
@@ -163,30 +192,79 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 return DefWindowProcW(hWnd, message, wParam, lParam);
             }
+    case WM_SIZE:
+        {
+            auto* state = reinterpret_cast<cad::win32::AppState*>(
+                GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+
+            if (wParam == SIZE_MINIMIZED)
+            {
+                if (state)
+                    state->backBuffer.reset();
+            }
+            else
+            {
+                // The next paint recreates the buffer if the client size changed.
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
+            return 0;
+        }
+    case WM_ERASEBKGND:
+        // WM_PAINT supplies the complete background together with the geometry.
+        return 1;
     case WM_PAINT:
         {
             PAINTSTRUCT ps{};
             HDC dc = BeginPaint(hWnd, &ps);
 
-            const auto* state = reinterpret_cast<const cad::win32::AppState*>(
+            auto* state = reinterpret_cast<cad::win32::AppState*>(
                 GetWindowLongPtrW(hWnd, GWLP_USERDATA)
             );
 
             RECT clientRect{};
-            if (dc && state && GetClientRect(hWnd, &clientRect))
+            if (dc && GetClientRect(hWnd, &clientRect))
             {
-                cad::win32::drawDocument(
-                    dc, state->document, clientRect
-                );
+                const int width = clientRect.right - clientRect.left;
+                const int height = clientRect.bottom - clientRect.top;
+                if (width > 0 && height > 0)
+                {
+                    const auto drawFrame = [&](HDC targetDc)
+                    {
+                        FillRect(targetDc, &clientRect, GetSysColorBrush(COLOR_WINDOW));
+                        if (state)
+                            cad::win32::drawDocument(targetDc, state->document, clientRect, state->selection.vertex);
+                    };
+
+                    if (state && state->backBuffer.resize(dc, width, height))
+                    {
+                        drawFrame(state->backBuffer.dc());
+                        if (!state->backBuffer.present(dc))
+                            drawFrame(dc);
+                    }
+                    else
+                    {
+                        // Keep painting functional if allocating a buffer fails.
+                        drawFrame(dc);
+                    }
+                }
             }
 
             EndPaint(hWnd, &ps);
             return 0;
         }
-        break;
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
+    case WM_NCDESTROY:
+        {
+            auto* state = reinterpret_cast<cad::win32::AppState*>(
+                GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+            if (state)
+                state->backBuffer.reset();
+
+            SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0);
+            return DefWindowProcW(hWnd, message, wParam, lParam);
+        }
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }

@@ -4,6 +4,9 @@
     <Filter Include="src">
       <UniqueIdentifier>{698E049C-1065-4408-A349-E5E2997A5888}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\editor">
+      <UniqueIdentifier>{E4D0671A-8EA6-47AF-A8EA-5CACDBEA46EA}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\platform">
       <UniqueIdentifier>{D6CF7455-F1BE-464B-928A-FAFA0994819D}</UniqueIdentifier>
     </Filter>
@@ -24,6 +27,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\editor\HitTester.h">
+      <Filter>src\editor</Filter>
+    </ClInclude>
     <ClInclude Include="framework.h">
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
@@ -39,13 +45,22 @@
     <ClInclude Include="src\platform\win32\AppState.h">
       <Filter>src\platform\win32</Filter>
     </ClInclude>
+    <ClInclude Include="src\platform\win32\BackBuffer.h">
+      <Filter>src\platform\win32</Filter>
+    </ClInclude>
     <ClInclude Include="src\platform\win32\GdiRenderer.h">
       <Filter>src\platform\win32</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\editor\HitTester.cpp">
+      <Filter>src\editor</Filter>
+    </ClCompile>
     <ClCompile Include="Projecr1_GK.cpp">
       <Filter>Pliki źródłowe</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\win32\BackBuffer.cpp">
+      <Filter>src\platform\win32</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp">
       <Filter>src\platform\win32</Filter>

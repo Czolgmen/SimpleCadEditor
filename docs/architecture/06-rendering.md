@@ -36,6 +36,8 @@ Przed rasteryzacją przycinamy geometrię do widoku, aby duże współrzędne ni
 
 `GdiBackend` posiada `MemoryDC` oraz 32-bitowy, odgórny `DIBSection`. Przy zmianie rozmiaru odtwarza bufor, a przy `WM_PAINT` rysuje całą klatkę i kopiuje ją na ekran przez `BitBlt`. Pełne odmalowanie wystarczy dla małej sceny; przyrostowe obszary odświeżania są opcjonalne.
 
+Obecna implementacja wydziela te zasoby do [klasy `BackBuffer`](../../src/platform/win32/BackBuffer.h), posiadanej przez `AppState`. `WM_PAINT` ponownie wykorzystuje bufor lub dopasowuje go do nowego rozmiaru, czyści tło i rysuje scenę. `WM_ERASEBKGND` nie wykonuje osobnego czyszczenia ekranu. Szczegóły cyklu życia opisuje [dokumentacja adaptera Windows](../../src/platform/win32/README.md).
+
 Małe klasy RAII opakowują obiekty GDI: pióra, pędzle, bitmapy, fonty i przywracanie poprzednio zaznaczonego obiektu DC. Obiektu zaznaczonego do DC nie wolno usuwać przed przywróceniem poprzedniego. Zasoby systemowe pożyczone od Windows nie są traktowane jak własne obiekty do usunięcia.
 
 Adapter pilnuje zgodności współrzędnych wejścia i renderera przy DPI innym niż 100%. Rysowanie i hit testing korzystają z tej samej transformacji i tolerancji próbkowania. Nie zapisujemy współrzędnych ekranowych do dokumentu.

@@ -14,7 +14,7 @@ namespace cad::win32
         };
     }
 
-    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect)
+    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex)
     {
         for (const auto& [id, polygon] : document.getPolygons())
         {
@@ -44,7 +44,9 @@ namespace cad::win32
                     continue;
 
                 const POINT p = worldToScreen(vertex->position, clientRect);
-                Ellipse(dc, p.x - 3, p.y - 3, p.x + 3, p.y + 3);
+                const int radius = (selectedVertex == vertexId) ? 6 : 3;
+                Ellipse(dc, p.x - radius, p.y - radius,
+                            p.x + radius, p.y + radius);
 
             }
             
