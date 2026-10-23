@@ -24,6 +24,9 @@ Win32/
 ARM/
 ARM64/
 
+# Keep WinAPI sources visible despite the Win32 build-output rule.
+!/src/platform/win32/
+
 # C++ compiler, linker and resource editor output
 *.obj
 *.pch

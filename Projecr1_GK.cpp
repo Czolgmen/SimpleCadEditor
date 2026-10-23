@@ -4,6 +4,11 @@
 #include "framework.h"
 #include "Projecr1_GK.h"
 
+#include <platform/win32/AppState.h>
+#include <platform/win32/GdiRenderer.h>
+#include <cad_core/demo/DemoScene.hpp>
+
+
 #define MAX_LOADSTRING 100
 
 // Zmienne globalne:
@@ -13,7 +18,7 @@ WCHAR szWindowClass[MAX_LOADSTRING];            // nazwa klasy okna głównego
 
 // Przekaż dalej deklaracje funkcji dołączone w tym module kodu:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
+BOOL                InitInstance(HINSTANCE, int, cad::win32::AppState&);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
@@ -24,8 +29,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
-
     // TODO: W tym miejscu umieść kod.
+    cad::win32::AppState appState{cad::createDemoScene()};
 
     // Inicjuj ciągi globalne
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -33,7 +38,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MyRegisterClass(hInstance);
 
     // Wykonaj inicjowanie aplikacji:
-    if (!InitInstance (hInstance, nCmdShow))
+    if (!InitInstance (hInstance, nCmdShow, appState))
     {
         return FALSE;
     }
@@ -93,12 +98,12 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //        W tej funkcji dojście wystąpienia jest zapisywane w zmiennej globalnej i
 //        jest tworzone i wyświetlane okno główne programu.
 //
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
+BOOL InitInstance(HINSTANCE hInstance, int nCmdShow, cad::win32::AppState& appState)
 {
    hInst = hInstance; // Przechowuj dojście wystąpienia w naszej zmiennej globalnej
 
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, &appState);
 
    if (!hWnd)
    {
@@ -131,6 +136,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
+            
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                 break;
@@ -142,12 +148,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+    case WM_NCCREATE:
+            {
+                const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+
+                auto* state = static_cast<cad::win32::AppState*>(create->lpCreateParams);
+
+                if (!state)
+                    return FALSE;
+
+                SetWindowLongPtrW(
+                    hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state)
+                );
+
+                return DefWindowProcW(hWnd, message, wParam, lParam);
+            }
     case WM_PAINT:
         {
-            PAINTSTRUCT ps;
-            BeginPaint(hWnd, &ps);
-            // TODO: Dodaj tutaj dowolny kod rysunku...
+            PAINTSTRUCT ps{};
+            HDC dc = BeginPaint(hWnd, &ps);
+
+            const auto* state = reinterpret_cast<const cad::win32::AppState*>(
+                GetWindowLongPtrW(hWnd, GWLP_USERDATA)
+            );
+
+            RECT clientRect{};
+            if (dc && state && GetClientRect(hWnd, &clientRect))
+            {
+                cad::win32::drawDocument(
+                    dc, state->document, clientRect
+                );
+            }
+
             EndPaint(hWnd, &ps);
+            return 0;
         }
         break;
     case WM_DESTROY:
