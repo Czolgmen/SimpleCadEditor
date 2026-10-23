@@ -1,9 +1,11 @@
 #include <cad_core/model/Document.h>
+#include <cad_core/demo/DemoScene.hpp>
 
 #include "../TestSupport.h"
 
 #include <array>
 #include <limits>
+#include <map>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -22,6 +24,9 @@ namespace
         decltype(std::declval<const Document&>().findEdge(EdgeId{})), const Edge*>);
     static_assert(std::is_same_v<
         decltype(std::declval<const Document&>().findPolygon(PolygonId{})), const Polygon*>);
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Document&>().getPolygons()),
+        const std::map<PolygonId, Polygon>&>);
 
     std::array<Vec2, 3> triangle()
     {
@@ -256,6 +261,47 @@ namespace
     {
         checkNonFiniteCoordinates(-std::numeric_limits<double>::infinity());
     }
+
+    void demoSceneIsValidAndTraversable()
+    {
+        const Document scene = createDemoScene();
+        require(scene.getPolygons().size() >= 2, "Demo scene must contain at least two polygons");
+        require(scene.validate().empty(), "Demo scene must pass document validation");
+
+        std::set<VertexId> vertexIds;
+        std::set<EdgeId> edgeIds;
+        for (const auto& [id, polygon] : scene.getPolygons())
+        {
+            require(polygon.id == id, "Polygon collection key differs from its ID");
+            require(scene.findPolygon(id) == &polygon, "Polygon collection must expose stored entities");
+            for (const VertexId vertexId : polygon.vertices)
+            {
+                require(scene.findVertex(vertexId) != nullptr, "Demo vertex cannot be found");
+                require(vertexIds.insert(vertexId).second, "Demo polygons share a vertex ID");
+            }
+            for (const EdgeId edgeId : polygon.edges)
+            {
+                require(scene.findEdge(edgeId) != nullptr, "Demo edge cannot be found");
+                require(edgeIds.insert(edgeId).second, "Demo polygons share an edge ID");
+            }
+        }
+    }
+
+    void demoScenesAreIndependent()
+    {
+        Document first = createDemoScene();
+        const Document second = createDemoScene();
+        const std::size_t firstCount = first.getPolygons().size();
+        const std::size_t secondCount = second.getPolygons().size();
+        const auto positions = triangle();
+        const PolygonId addedId = first.addPolygon(positions);
+
+        require(first.getPolygons().size() == firstCount + 1, "New polygon missing from collection");
+        require(second.getPolygons().size() == secondCount, "Editing one demo changed another");
+        checkPolygon(first, addedId, positions);
+        require(first.validate().empty() && second.validate().empty(),
+            "Independent demo documents must remain valid");
+    }
 }
 
 namespace cad::tests
@@ -276,7 +322,9 @@ namespace cad::tests
             TestCase{"reject two vertices without mutation", rejectsTwoVertices},
             TestCase{"reject NaN in either coordinate without mutation", rejectsNaN},
             TestCase{"reject positive infinity without mutation", rejectsPositiveInfinity},
-            TestCase{"reject negative infinity without mutation", rejectsNegativeInfinity}
+            TestCase{"reject negative infinity without mutation", rejectsNegativeInfinity},
+            TestCase{"demo scene is valid and traversable", demoSceneIsValidAndTraversable},
+            TestCase{"demo scenes own independent documents", demoScenesAreIndependent}
         };
         return tests;
     }

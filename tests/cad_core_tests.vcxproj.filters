@@ -13,6 +13,9 @@
     <ClCompile Include="core\DocumentTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\ValidationTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="geometry\Vec2Tests.cpp">
       <Filter>geometry</Filter>
     </ClCompile>

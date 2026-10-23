@@ -1,12 +1,14 @@
 # cad_core
 
-Szkielet biblioteki statycznej C++20, niezależnej od WinAPI i GDI. Dotychczasowa deklaracja `Vec2` została przeniesiona do nagłówka, a definicje konstruktora i destruktora do pliku implementacji, w przestrzeni nazw `cad`. Pozostałe nagłówki zawierają miejsca na implementację; typy modelu i algorytmy nie są jeszcze napisane.
+Biblioteka statyczna C++20, niezależna od WinAPI i GDI. Zawiera operacje `Vec2`, model dokumentu z odcinkami, walidator oraz początkową scenę demonstracyjną, w przestrzeni nazw `cad`.
 
 ## Struktura
 
 ```text
 cad_core/
   include/cad_core/
+    demo/
+      DemoScene.hpp
     geometry/
       Vec2.h
     model/
@@ -15,7 +17,10 @@ cad_core/
       Edge.h
       Polygon.h
       Document.h
+      Validation.h
   src/
+    demo/
+      DemoScene.cpp
     geometry/
       Vec2.cpp
     model/
@@ -46,7 +51,7 @@ Otwórz folder repozytorium zawierający `.vscode` oraz `cad_core`. [Konfiguracj
 
 ## Kolejność implementacji
 
-Metody wyszukiwania i tworzenie wielokątów mają [testy dokumentu](../tests/README.md), uruchamiane z katalogu repozytorium poleceniem `.\tests\run-tests.cmd`.
+Metody wyszukiwania, tworzenie wielokątów, walidator i operacje `Vec2` mają [testy](../tests/README.md), uruchamiane z katalogu repozytorium poleceniem `.\tests\run-tests.cmd`.
 
 1. `Vec2.h` i `Vec2.cpp`: współrzędne oraz operacje na wektorach.
 2. `Id.h`: osobne typy identyfikatorów wierzchołków, krawędzi i wielokątów.
@@ -54,3 +59,17 @@ Metody wyszukiwania i tworzenie wielokątów mają [testy dokumentu](../tests/RE
 4. `Document.h` i `Document.cpp`: własność danych i API dokumentu.
 
 Podział odpowiedzialności opisuje [plan architektury](../docs/architecture/README.md).
+
+## Scena demonstracyjna
+
+`createDemoScene()`, zadeklarowane w `<cad_core/demo/DemoScene.hpp>`, tworzy dokument z rozdzielonymi przestrzennie czworokątem i trójkątem. Dodanie kolejnego wielokąta sprowadza się do przygotowania jego współrzędnych i wywołania `addPolygon` w `DemoScene.cpp`. Przed zwróceniem dokumentu funkcja uruchamia `validate()` i zgłasza `std::logic_error`, jeśli wykryje problem.
+
+`Document::getPolygons() const` udostępnia istniejącą mapę wielokątów jako referencję tylko do odczytu. Renderer może iterować po niej i odczytywać powiązane krawędzie oraz wierzchołki przez `findEdge` i `findVertex`. Każde wywołanie `createDemoScene()` zwraca niezależny dokument.
+
+## Walidacja dokumentu
+
+`Document::validate() const` zwraca listę `ValidationIssue`. Pusta lista oznacza, że zapisane wielokąty spełniają aktualne kontrole. Dokument bez wielokątów jest poprawną pustą sceną.
+
+Walidator sprawdza minimum trzech wierzchołków, zgodność liczby krawędzi, istnienie wskazanych encji, skończone pozycje i połączenie krawędzi w zamknięty cykl. Sprawdza także istnienie obu końców krawędzi. Samoprzecięcia są dozwolone. Przy brakujących encjach lub pustych listach zgłasza błędy i bezpiecznie kontynuuje pozostałe kontrole.
+
+Każdy problem zawiera kod oraz związane ID wielokąta, wierzchołka lub krawędzi. Niewykorzystane pola ID pozostają zerowe. Zgłoszenia brakującego wierzchołka mogą dotyczyć jego wystąpienia na liście wielokąta albo jako końca krawędzi; w drugim przypadku podane jest również ID krawędzi. Metoda zbiera wszystkie wykryte problemy bez zmiany modelu i nie wykonuje automatycznej naprawy.

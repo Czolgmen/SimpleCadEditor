@@ -39,6 +39,11 @@ namespace cad {
         return &it->second;
     }
 
+    const std::map<PolygonId, Polygon>& Document::getPolygons() const
+    {
+        return polygons;
+    }
+
     PolygonId Document::addPolygon(std::span<const Vec2> positions)
     {
 
@@ -73,6 +78,64 @@ namespace cad {
 
         polygons.emplace(polygonId, polygon);
         return polygonId;
+    }
+
+    std::vector<ValidationIssue> Document::validate() const
+    {
+        std::vector<ValidationIssue> issues;
+
+        for (const auto& [polygonId, polygon] : polygons)
+        {
+            const std::size_t vertexCount = polygon.vertices.size();
+            if (vertexCount < 3)
+                issues.push_back({ValidationError::TooFewVertices, polygonId});
+
+            if (polygon.edges.size() != vertexCount)
+                issues.push_back({ValidationError::EdgeCountMismatch, polygonId});
+
+            for (const VertexId vertexId : polygon.vertices)
+            {
+                const Vertex* vertex = findVertex(vertexId);
+                if (vertex == nullptr)
+                {
+                    issues.push_back({ValidationError::MissingVertex, polygonId, vertexId});
+                    continue;
+                }
+
+                if (!std::isfinite(vertex->position.x) || !std::isfinite(vertex->position.y))
+                    issues.push_back({ValidationError::NonFinitePosition, polygonId, vertexId});
+            }
+
+            for (std::size_t i = 0; i < polygon.edges.size(); ++i)
+            {
+                const EdgeId edgeId = polygon.edges[i];
+                const Edge* edge = findEdge(edgeId);
+                if (edge == nullptr)
+                {
+                    issues.push_back({ValidationError::MissingEdge, polygonId, {}, edgeId});
+                    continue;
+                }
+
+                // An edge can reference missing endpoints even when the polygon's
+                // own vertex list contains only valid IDs.
+                if (findVertex(edge->start) == nullptr)
+                    issues.push_back({ValidationError::MissingVertex, polygonId, edge->start, edgeId});
+                if (edge->end != edge->start && findVertex(edge->end) == nullptr)
+                    issues.push_back({ValidationError::MissingVertex, polygonId, edge->end, edgeId});
+
+                // Extra edges have no corresponding slot in the vertex cycle.
+                // Their count has already been reported; avoid invalid indexing.
+                if (i >= vertexCount)
+                    continue;
+
+                const VertexId expectedStart = polygon.vertices[i];
+                const VertexId expectedEnd = polygon.vertices[(i + 1) % vertexCount];
+                if (edge->start != expectedStart || edge->end != expectedEnd)
+                    issues.push_back({ValidationError::InvalidEdgeConnection, polygonId, {}, edgeId});
+            }
+        }
+
+        return issues;
     }
 }
 

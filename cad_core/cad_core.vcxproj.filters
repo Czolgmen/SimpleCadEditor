@@ -10,6 +10,9 @@
     <Filter Include="include\model">
       <UniqueIdentifier>{250D2A6B-BCDA-45D7-8A59-310317ED6D1C}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\demo">
+      <UniqueIdentifier>{B60B184D-B972-4AF0-A183-43370A542414}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src">
       <UniqueIdentifier>{1A250576-C14A-4B6D-B855-04521005AB61}</UniqueIdentifier>
     </Filter>
@@ -19,8 +22,14 @@
     <Filter Include="src\model">
       <UniqueIdentifier>{8550CA01-184E-490E-B16F-E1B7F327B6A9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\demo">
+      <UniqueIdentifier>{5C7D0576-C659-4D91-9DE6-16442BD885A9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\cad_core\demo\DemoScene.hpp">
+      <Filter>include\demo</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\geometry\Vec2.h">
       <Filter>include\geometry</Filter>
     </ClInclude>
@@ -39,8 +48,14 @@
     <ClInclude Include="include\cad_core\model\Document.h">
       <Filter>include\model</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\model\Validation.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\demo\DemoScene.cpp">
+      <Filter>src\demo</Filter>
+    </ClCompile>
     <ClCompile Include="src\geometry\Vec2.cpp">
       <Filter>src\geometry</Filter>
     </ClCompile>

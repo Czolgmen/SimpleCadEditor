@@ -4,10 +4,13 @@
 #include <cad_core/model/Vertex.h>
 #include <cad_core/model/Polygon.h>
 #include <cad_core/model/Id.h>
+#include <cad_core/model/Validation.h>
+
 #include <cad_core/geometry/Vec2.h>
 
 #include <map>
 #include <span>
+#include <vector>
 
 
 namespace cad
@@ -28,8 +31,10 @@ namespace cad
         const Vertex* findVertex(VertexId id) const;
         const Polygon* findPolygon(PolygonId id) const;
         const Edge* findEdge(EdgeId id) const;
+        const std::map<PolygonId, Polygon>& getPolygons() const;
 
         PolygonId addPolygon(std::span<const Vec2> positions);
+        std::vector<ValidationIssue> validate() const;
     };
 
 }

@@ -23,7 +23,7 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 
 ## Zakres
 
-[DocumentTests.cpp](core/DocumentTests.cpp) zawiera 14 przypadków obejmujących:
+[DocumentTests.cpp](core/DocumentTests.cpp) zawiera 16 przypadków obejmujących:
 
 - `findVertex`, `findEdge`, `findPolygon`: odczyt istniejących encji oraz `nullptr` dla nieznanych i zerowych ID, także w pustym dokumencie.
 - `addPolygon`: pozycje i kolejność wierzchołków, komplet krawędzi, poprawne końce i zamknięcie cyklu, unikalne niezerowe ID.
@@ -33,6 +33,7 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 - Odrzucanie 0, 1 i 2 punktów oraz NaN i obu nieskończoności w każdej współrzędnej każdego wierzchołka.
 - Brak zmian istniejącego wielokąta, osieroconych encji i zużycia ID po odrzuceniu niepoprawnych danych.
 - Niezmienność typów wyników metod odczytu przez sprawdzenia kompilacyjne `static_assert`.
+- Poprawność i przechodzenie po scenie demonstracyjnej przez `getPolygons()` oraz niezależność dokumentów tworzonych przez `createDemoScene()`.
 
 Testy dokumentu używają publicznego API. Nie badają prywatnego układu kontenerów, awarii alokacji pamięci ani przyszłych operacji edycji.
 
@@ -49,4 +50,16 @@ Testy dokumentu używają publicznego API. Nie badają prywatnego układu konten
 
 Wyniki obliczeń zmiennoprzecinkowych porównujemy z tolerancją bezwzględną `1e-12` i względną `1e-12`. Niepoprawne wyniki NaN i nieskończoności powodują niepowodzenie porównania. Przypadki te sprawdzają obecny kontrakt dla skończonych danych; nie narzucają nowej polityki wejściowych NaN, nieskończoności ani arytmetyki na granicy zakresu `double`.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia oba zestawy i podaje wspólny wynik **36 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[ValidationTests.cpp](core/ValidationTests.cpp) zawiera 14 przypadków obejmujących wszystkie sześć kodów `ValidationError`, identyfikatory encji w zgłoszeniach oraz:
+
+- Poprawny pusty dokument i scenę z wieloma wielokątami, również wklęsłymi i samoprzecinającymi się.
+- Zbyt mało wierzchołków, pustą listę wierzchołków oraz za mało lub za dużo krawędzi bez niepoprawnego indeksowania.
+- Brakujące odwołania w listach wielokąta i na obu końcach krawędzi.
+- Niepoprawne połączenia kolejnych wierzchołków i zamknięcie cyklu.
+- NaN i obie nieskończoności w każdej współrzędnej każdego wierzchołka.
+- Zbieranie wielu problemów z różnych wielokątów bez przerywania walidacji.
+- Powtarzalność wyniku oraz zachowanie topologii i liczników ID, bez automatycznej naprawy geometrii.
+
+Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture walidatora celowo modyfikuje encje przez `const_cast` wskaźników zwróconych z metod `find...`. Obiekt źródłowy jest nieconst, więc takie usunięcie kwalifikatora jest dozwolone; mechanizm pozostaje wyłącznie w pliku testowym.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia trzy zestawy i podaje wspólny wynik **52 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
