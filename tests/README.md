@@ -1,6 +1,6 @@
-# Testy cad_core
+# Testy rdzenia i edytora
 
-Projekt `cad_core_tests` jest programem konsolowym C++20 linkującym bibliotekę `cad_core`. Nie wymaga pobierania zewnętrznego frameworka ani uruchamiania aplikacji WinAPI.
+Projekt `cad_core_tests` jest programem konsolowym C++20 linkującym bibliotekę `cad_core` i kompilującym przenośny `src/editor/HitTester.cpp`. Nie wymaga pobierania zewnętrznego frameworka ani uruchamiania aplikacji WinAPI.
 
 ## Uruchamianie
 
@@ -23,7 +23,7 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 
 ## Zakres
 
-[DocumentTests.cpp](core/DocumentTests.cpp) zawiera 16 przypadków obejmujących:
+[DocumentTests.cpp](core/DocumentTests.cpp) zawiera 23 przypadki obejmujące:
 
 - `findVertex`, `findEdge`, `findPolygon`: odczyt istniejących encji oraz `nullptr` dla nieznanych i zerowych ID, także w pustym dokumencie.
 - `addPolygon`: pozycje i kolejność wierzchołków, komplet krawędzi, poprawne końce i zamknięcie cyklu, unikalne niezerowe ID.
@@ -34,8 +34,11 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 - Brak zmian istniejącego wielokąta, osieroconych encji i zużycia ID po odrzuceniu niepoprawnych danych.
 - Niezmienność typów wyników metod odczytu przez sprawdzenia kompilacyjne `static_assert`.
 - Poprawność i przechodzenie po scenie demonstracyjnej przez `getPolygons()` oraz niezależność dokumentów tworzonych przez `createDemoScene()`.
+- `moveVertex`: zmianę wyłącznie wskazanego wierzchołka przy zachowaniu ID, połączeń krawędzi, innych wierzchołków i pozostałych wielokątów.
+- Kolejne przesunięcia, akceptowanie niezmienionej pozycji i kopiowanie współrzędnych wejściowych.
+- Odrzucanie ruchu dla nieistniejącego ID, NaN i obu nieskończoności w każdej współrzędnej bez zmiany dokumentu.
 
-Testy dokumentu używają publicznego API. Nie badają prywatnego układu kontenerów, awarii alokacji pamięci ani przyszłych operacji edycji.
+Testy dokumentu używają publicznego API. Nie badają prywatnego układu kontenerów ani awarii alokacji pamięci.
 
 [Vec2Tests.cpp](geometry/Vec2Tests.cpp) zawiera 22 przypadki obejmujące:
 
@@ -62,4 +65,14 @@ Wyniki obliczeń zmiennoprzecinkowych porównujemy z tolerancją bezwzględną `
 
 Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture walidatora celowo modyfikuje encje przez `const_cast` wskaźników zwróconych z metod `find...`. Obiekt źródłowy jest nieconst, więc takie usunięcie kwalifikatora jest dozwolone; mechanizm pozostaje wyłącznie w pliku testowym.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia trzy zestawy i podaje wspólny wynik **52 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[HitTesterTests.cpp](editor/HitTesterTests.cpp) zawiera 14 przypadków obejmujących:
+
+- Pusty dokument, dokładne trafienie przy zerowej tolerancji i brak trafienia poza tolerancją.
+- Wybór najbliższego wierzchołka niezależnie od kolejności kandydatów, także z różnych wielokątów.
+- Kołowy obszar trafienia i akceptowanie odległości dokładnie równej tolerancji.
+- Odrzucanie ujemnej tolerancji oraz zachowanie pierwszego kandydata przy równych odległościach i pokrywających się wierzchołkach.
+- Ujemne i ułamkowe współrzędne świata oraz wyszukiwanie w nowej pozycji po `moveVertex`.
+
+Testy hit testingu używają skończonych współrzędnych i tolerancji. Nie testują komunikatów Windows, przechwytywania myszy ani rysowania zaznaczenia.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia cztery zestawy i podaje wspólny wynik **73 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

@@ -7,6 +7,9 @@
     <Filter Include="geometry">
       <UniqueIdentifier>{9FD6B72F-E58D-4C56-BDA5-6F4D904A7094}</UniqueIdentifier>
     </Filter>
+    <Filter Include="editor">
+      <UniqueIdentifier>{4EA6F279-74B3-4498-9CB8-CF2B390FEE02}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TestsMain.cpp" />
@@ -19,9 +22,18 @@
     <ClCompile Include="geometry\Vec2Tests.cpp">
       <Filter>geometry</Filter>
     </ClCompile>
+    <ClCompile Include="editor\HitTesterTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\editor\HitTester.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
+    <ClInclude Include="..\src\editor\HitTester.h">
+      <Filter>editor</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />

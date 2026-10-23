@@ -56,7 +56,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>Sync</ExceptionHandling>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\cad_core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\cad_core\include;$(ProjectDir)..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -85,9 +85,12 @@
     <ClCompile Include="core\DocumentTests.cpp" />
     <ClCompile Include="core\ValidationTests.cpp" />
     <ClCompile Include="geometry\Vec2Tests.cpp" />
+    <ClCompile Include="editor\HitTesterTests.cpp" />
+    <ClCompile Include="..\src\editor\HitTester.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
+    <ClInclude Include="..\src\editor\HitTester.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />

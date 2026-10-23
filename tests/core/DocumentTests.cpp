@@ -262,6 +262,116 @@ namespace
         checkNonFiniteCoordinates(-std::numeric_limits<double>::infinity());
     }
 
+    void movesOnlyRequestedVertexAndPreservesTopology()
+    {
+        Document document;
+        auto expected = triangle();
+        const PolygonId firstId = document.addPolygon(expected);
+        const Polygon first = checkPolygon(document, firstId, expected);
+        const std::array otherPositions{
+            Vec2{100, 100}, Vec2{120, 100}, Vec2{100, 120}};
+        const PolygonId otherId = document.addPolygon(otherPositions);
+        const Polygon other = checkPolygon(document, otherId, otherPositions);
+
+        for (std::size_t i = 0; i < expected.size(); ++i)
+        {
+            expected[i] = Vec2{-40.5 + static_cast<double>(i), 25.25};
+            require(document.moveVertex(first.vertices[i], expected[i]),
+                "Moving an existing vertex must succeed");
+
+            const Polygon& moved = checkPolygon(document, firstId, expected);
+            require(moved.vertices == first.vertices && moved.edges == first.edges,
+                "Moving a vertex changed topology or IDs");
+            const Polygon& preserved = checkPolygon(document, otherId, otherPositions);
+            require(preserved.vertices == other.vertices && preserved.edges == other.edges,
+                "Moving a vertex changed another polygon's IDs");
+            require(document.getPolygons().size() == 2, "Moving changed the polygon count");
+            require(document.validate().empty(), "Moving a vertex made the document invalid");
+        }
+    }
+
+    void repeatedMovesCopyPositionAndAcceptSamePosition()
+    {
+        Document document;
+        auto expected = triangle();
+        const PolygonId polygonId = document.addPolygon(expected);
+        const VertexId vertexId = checkPolygon(document, polygonId, expected).vertices[1];
+        Vec2 input{-15.5, 20.25};
+        expected[1] = input;
+        require(document.moveVertex(vertexId, input), "First move failed");
+        input = Vec2{999, 999};
+        checkPolygon(document, polygonId, expected);
+
+        require(document.moveVertex(vertexId, expected[1]), "An unchanged position must be accepted");
+        expected[1] = Vec2{0, 0};
+        require(document.moveVertex(vertexId, expected[1]), "A repeated move failed");
+        checkPolygon(document, polygonId, expected);
+    }
+
+    void rejectsMoveInEmptyDocument()
+    {
+        Document document;
+        require(!document.moveVertex(VertexId{1}, Vec2{10, 20}),
+            "Moving a missing vertex in an empty document must fail");
+        require(document.findVertex(VertexId{1}) == nullptr, "Move inserted a missing vertex");
+        require(document.getPolygons().empty() && document.validate().empty(),
+            "Rejected move changed an empty document");
+    }
+
+    void rejectsUnknownMoveWithoutMutation()
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId polygonId = document.addPolygon(positions);
+        const Polygon original = checkPolygon(document, polygonId, positions);
+        for (const VertexId id : {VertexId{}, VertexId{original.vertices.back().value + 1},
+                 VertexId{std::numeric_limits<std::uint64_t>::max()}})
+        {
+            require(!document.moveVertex(id, Vec2{50, -20}), "Unknown vertex move was accepted");
+            require(document.findVertex(id) == nullptr, "Rejected move inserted a vertex");
+            const Polygon& preserved = checkPolygon(document, polygonId, positions);
+            require(preserved.vertices == original.vertices && preserved.edges == original.edges,
+                "Rejected move changed IDs");
+            require(document.getPolygons().size() == 1 && document.validate().empty(),
+                "Rejected move changed the document");
+        }
+    }
+
+    void checkRejectedMoveCoordinate(double invalidValue)
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId polygonId = document.addPolygon(positions);
+        const Polygon original = checkPolygon(document, polygonId, positions);
+        for (const VertexId id : original.vertices)
+        {
+            for (const Vec2 invalid : {Vec2{invalidValue, 42}, Vec2{42, invalidValue}})
+            {
+                require(!document.moveVertex(id, invalid), "Non-finite move was accepted");
+                const Polygon& preserved = checkPolygon(document, polygonId, positions);
+                require(preserved.vertices == original.vertices && preserved.edges == original.edges,
+                    "Non-finite move changed IDs");
+                require(document.getPolygons().size() == 1 && document.validate().empty(),
+                    "Non-finite move changed the document");
+            }
+        }
+    }
+
+    void rejectsNaNMove()
+    {
+        checkRejectedMoveCoordinate(std::numeric_limits<double>::quiet_NaN());
+    }
+
+    void rejectsPositiveInfinityMove()
+    {
+        checkRejectedMoveCoordinate(std::numeric_limits<double>::infinity());
+    }
+
+    void rejectsNegativeInfinityMove()
+    {
+        checkRejectedMoveCoordinate(-std::numeric_limits<double>::infinity());
+    }
+
     void demoSceneIsValidAndTraversable()
     {
         const Document scene = createDemoScene();
@@ -323,6 +433,13 @@ namespace cad::tests
             TestCase{"reject NaN in either coordinate without mutation", rejectsNaN},
             TestCase{"reject positive infinity without mutation", rejectsPositiveInfinity},
             TestCase{"reject negative infinity without mutation", rejectsNegativeInfinity},
+            TestCase{"move only requested vertex and preserve topology", movesOnlyRequestedVertexAndPreservesTopology},
+            TestCase{"repeated moves copy position and accept unchanged position", repeatedMovesCopyPositionAndAcceptSamePosition},
+            TestCase{"reject move in empty document", rejectsMoveInEmptyDocument},
+            TestCase{"reject unknown vertex move without mutation", rejectsUnknownMoveWithoutMutation},
+            TestCase{"reject NaN move without mutation", rejectsNaNMove},
+            TestCase{"reject positive infinity move without mutation", rejectsPositiveInfinityMove},
+            TestCase{"reject negative infinity move without mutation", rejectsNegativeInfinityMove},
             TestCase{"demo scene is valid and traversable", demoSceneIsValidAndTraversable},
             TestCase{"demo scenes own independent documents", demoScenesAreIndependent}
         };
