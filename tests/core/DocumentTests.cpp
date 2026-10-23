@@ -372,6 +372,163 @@ namespace
         checkRejectedMoveCoordinate(-std::numeric_limits<double>::infinity());
     }
 
+    void movesWholePolygonAndPreservesOtherPolygons()
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId id = document.addPolygon(positions);
+        const Polygon original = checkPolygon(document, id, positions);
+        const std::array otherPositions{
+            Vec2{100, 100}, Vec2{120, 100}, Vec2{100, 120}};
+        const PolygonId otherId = document.addPolygon(otherPositions);
+        const Polygon other = checkPolygon(document, otherId, otherPositions);
+
+        require(document.movePolygon(id, Vec2{4.5, -2.25}), "Polygon move failed");
+        const std::array expected{Vec2{2, -5.5}, Vec2{15.25, -1.75}, Vec2{5.5, 5.875}};
+        const Polygon& moved = checkPolygon(document, id, expected);
+        require(moved.vertices == original.vertices && moved.edges == original.edges,
+            "Polygon move changed IDs or topology");
+        const Polygon& preserved = checkPolygon(document, otherId, otherPositions);
+        require(preserved.vertices == other.vertices && preserved.edges == other.edges,
+            "Polygon move changed another polygon's IDs");
+        require(document.getPolygons().size() == 2 && document.validate().empty(),
+            "Polygon move changed the polygon count or invalidated the document");
+
+        const PolygonId nextId = document.addPolygon(positions);
+        const Polygon& next = checkPolygon(document, nextId, positions);
+        require(nextId.value == otherId.value + 1 &&
+                next.vertices.front().value == other.vertices.back().value + 1 &&
+                next.edges.front().value == other.edges.back().value + 1,
+            "Polygon move consumed entity IDs");
+    }
+
+    void polygonMovesAccumulateAndAcceptZero()
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId id = document.addPolygon(positions);
+        require(document.movePolygon(id, Vec2{}), "Zero displacement must be accepted");
+        checkPolygon(document, id, positions);
+
+        require(document.movePolygon(id, Vec2{4, -8}), "First polygon move failed");
+        const std::array first{Vec2{1.5, -11.25}, Vec2{14.75, -7.5}, Vec2{5, 0.125}};
+        checkPolygon(document, id, first);
+        require(document.movePolygon(id, Vec2{-1.5, 2}), "Second polygon move failed");
+        const std::array second{Vec2{0, -9.25}, Vec2{13.25, -5.5}, Vec2{3.5, 2.125}};
+        checkPolygon(document, id, second);
+        require(document.movePolygon(id, Vec2{-2.5, 6}), "Inverse polygon move failed");
+        checkPolygon(document, id, positions);
+    }
+
+    void rejectsPolygonMoveInEmptyDocument()
+    {
+        Document document;
+        require(!document.movePolygon(PolygonId{1}, Vec2{10, 20}),
+            "Missing polygon move must fail in an empty document");
+        require(document.getPolygons().empty() && document.findPolygon(PolygonId{1}) == nullptr,
+            "Rejected polygon move inserted a polygon");
+    }
+
+    void rejectsUnknownPolygonMoveWithoutMutation()
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId id = document.addPolygon(positions);
+        const Polygon original = checkPolygon(document, id, positions);
+        for (const PolygonId missing : {PolygonId{}, PolygonId{id.value + 1},
+                 PolygonId{std::numeric_limits<std::uint64_t>::max()}})
+        {
+            require(!document.movePolygon(missing, Vec2{5, -10}), "Unknown polygon move was accepted");
+            require(document.findPolygon(missing) == nullptr, "Rejected move inserted a polygon");
+            const Polygon& preserved = checkPolygon(document, id, positions);
+            require(preserved.vertices == original.vertices && preserved.edges == original.edges,
+                "Rejected polygon move changed IDs");
+            require(document.getPolygons().size() == 1 && document.validate().empty(),
+                "Rejected polygon move changed the document");
+        }
+    }
+
+    void checkRejectedPolygonDelta(double invalidValue)
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId id = document.addPolygon(positions);
+        const Polygon original = checkPolygon(document, id, positions);
+        for (const Vec2 delta : {Vec2{invalidValue, 5}, Vec2{5, invalidValue}})
+        {
+            require(!document.movePolygon(id, delta), "Non-finite polygon displacement was accepted");
+            const Polygon& preserved = checkPolygon(document, id, positions);
+            require(preserved.vertices == original.vertices && preserved.edges == original.edges,
+                "Rejected polygon displacement changed IDs");
+            require(document.getPolygons().size() == 1 && document.validate().empty(),
+                "Rejected polygon displacement changed the document");
+        }
+    }
+
+    void rejectsNaNPolygonDelta()
+    {
+        checkRejectedPolygonDelta(std::numeric_limits<double>::quiet_NaN());
+    }
+
+    void rejectsPositiveInfinityPolygonDelta()
+    {
+        checkRejectedPolygonDelta(std::numeric_limits<double>::infinity());
+    }
+
+    void rejectsNegativeInfinityPolygonDelta()
+    {
+        checkRejectedPolygonDelta(-std::numeric_limits<double>::infinity());
+    }
+
+    void polygonOverflowDoesNotPartiallyMoveVertices()
+    {
+        const double maximum = std::numeric_limits<double>::max();
+        for (const double large : {maximum, -maximum})
+        {
+            for (const bool moveX : {true, false})
+            {
+                Document document;
+                std::array positions{Vec2{0, 0}, Vec2{1, 0}, Vec2{1, 1}, Vec2{0, 1}};
+                if (moveX)
+                    positions.back().x = large;
+                else
+                    positions.back().y = large;
+                const PolygonId id = document.addPolygon(positions);
+                const Polygon original = checkPolygon(document, id, positions);
+
+                // Only the LAST vertex overflows: earlier candidates must remain unchanged.
+                const Vec2 delta = moveX ? Vec2{large, 0} : Vec2{0, large};
+                require(!document.movePolygon(id, delta), "Overflowing polygon move was accepted");
+                const Polygon& preserved = checkPolygon(document, id, positions);
+                require(preserved.vertices == original.vertices && preserved.edges == original.edges,
+                    "Overflowing polygon move changed IDs");
+                require(document.validate().empty(), "Rejected overflow left invalid positions");
+            }
+        }
+    }
+
+    void missingPolygonVertexDoesNotPartiallyMoveVertices()
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId id = document.addPolygon(positions);
+        const Polygon original = checkPolygon(document, id, positions);
+        // As in ValidationTests: the document is non-const; corruption is test-only.
+        auto* polygon = const_cast<Polygon*>(document.findPolygon(id));
+        const VertexId missing{std::numeric_limits<std::uint64_t>::max()};
+        polygon->vertices.back() = missing;
+        const auto corruptedIds = polygon->vertices;
+
+        require(!document.movePolygon(id, Vec2{5, 10}), "Move with a missing vertex was accepted");
+        require(polygon->vertices == corruptedIds && polygon->edges == original.edges,
+            "Rejected move changed the corrupted topology");
+        require(document.findVertex(missing) == nullptr, "Rejected move inserted the missing vertex");
+        // Restore only the deliberately broken reference, then inspect ALL original positions.
+        polygon->vertices.back() = original.vertices.back();
+        checkPolygon(document, id, positions);
+        require(document.validate().empty(), "Rejected move damaged the original model");
+    }
+
     void demoSceneIsValidAndTraversable()
     {
         const Document scene = createDemoScene();
@@ -440,6 +597,15 @@ namespace cad::tests
             TestCase{"reject NaN move without mutation", rejectsNaNMove},
             TestCase{"reject positive infinity move without mutation", rejectsPositiveInfinityMove},
             TestCase{"reject negative infinity move without mutation", rejectsNegativeInfinityMove},
+            TestCase{"move whole polygon and preserve other polygons and IDs", movesWholePolygonAndPreservesOtherPolygons},
+            TestCase{"polygon displacements accumulate and accept zero", polygonMovesAccumulateAndAcceptZero},
+            TestCase{"reject polygon move in empty document", rejectsPolygonMoveInEmptyDocument},
+            TestCase{"reject unknown polygon move without mutation", rejectsUnknownPolygonMoveWithoutMutation},
+            TestCase{"reject NaN polygon displacement", rejectsNaNPolygonDelta},
+            TestCase{"reject positive infinity polygon displacement", rejectsPositiveInfinityPolygonDelta},
+            TestCase{"reject negative infinity polygon displacement", rejectsNegativeInfinityPolygonDelta},
+            TestCase{"last vertex overflow causes no partial polygon move", polygonOverflowDoesNotPartiallyMoveVertices},
+            TestCase{"missing last vertex causes no partial polygon move", missingPolygonVertexDoesNotPartiallyMoveVertices},
             TestCase{"demo scene is valid and traversable", demoSceneIsValidAndTraversable},
             TestCase{"demo scenes own independent documents", demoScenesAreIndependent}
         };

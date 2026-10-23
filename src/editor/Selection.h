@@ -7,5 +7,6 @@ namespace cad::editor
     struct Selection
     {
         std::optional<cad::VertexId> vertex;
+        std::optional<cad::PolygonId> polygon;
     };
 }

@@ -36,6 +36,7 @@ namespace cad
         PolygonId addPolygon(std::span<const Vec2> positions);
         std::vector<ValidationIssue> validate() const;
         bool moveVertex(VertexId id, const Vec2& position);
+        bool movePolygon(PolygonId id, const Vec2& delta);
     };
 
 }

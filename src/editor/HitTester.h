@@ -17,4 +17,9 @@ namespace cad::editor
         const Document& document,
         const Vec2& worldPosition,
         double tolerance);
+
+    std::optional<PolygonId> hitTestPolygon (
+        const Document& document,
+        const Vec2& worldPosition
+    );
 }

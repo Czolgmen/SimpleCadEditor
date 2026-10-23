@@ -39,4 +39,51 @@ namespace cad::editor
 
         return nearest;
     }
+
+    bool pointInPolygon(
+        const Document& document,
+        const Polygon& polygon,
+        const Vec2& point
+    )
+    {
+        bool inside = false;
+
+        for (const auto& edgeId: polygon.edges)
+        {
+            const auto* edge = document.findEdge(edgeId);
+            if (!edge)
+                return false;
+
+            const auto* start = document.findVertex(edge->start);
+            const auto* end = document.findVertex(edge->end);
+            if (!start || !end)
+                return false;
+
+            if ((start->position.y > point.y) != (end->position.y > point.y))
+            {
+                const double crossingX = 
+                    start->position.x + (point.y - start->position.y) * (end->position.x - start->position.x) / (end->position.y - start->position.y);
+
+                if (crossingX > point.x)
+                    inside = !inside;
+            }
+
+        }
+
+        return inside;
+    }
+
+    std::optional<PolygonId> hitTestPolygon(const Document &document, const Vec2 &worldPosition)
+    {
+        const auto& polygons = document.getPolygons();
+        for (auto it = polygons.rbegin(); it != polygons.rend(); ++it)
+        {
+            if (pointInPolygon(document, it->second, worldPosition))
+            {
+                return it->first;
+            }
+        }
+
+        return std::nullopt;
+    }
 }

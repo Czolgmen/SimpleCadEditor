@@ -23,7 +23,7 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 
 ## Zakres
 
-[DocumentTests.cpp](core/DocumentTests.cpp) zawiera 23 przypadki obejmujące:
+[DocumentTests.cpp](core/DocumentTests.cpp) zawiera 32 przypadki obejmujące:
 
 - `findVertex`, `findEdge`, `findPolygon`: odczyt istniejących encji oraz `nullptr` dla nieznanych i zerowych ID, także w pustym dokumencie.
 - `addPolygon`: pozycje i kolejność wierzchołków, komplet krawędzi, poprawne końce i zamknięcie cyklu, unikalne niezerowe ID.
@@ -37,8 +37,11 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 - `moveVertex`: zmianę wyłącznie wskazanego wierzchołka przy zachowaniu ID, połączeń krawędzi, innych wierzchołków i pozostałych wielokątów.
 - Kolejne przesunięcia, akceptowanie niezmienionej pozycji i kopiowanie współrzędnych wejściowych.
 - Odrzucanie ruchu dla nieistniejącego ID, NaN i obu nieskończoności w każdej współrzędnej bez zmiany dokumentu.
+- `movePolygon`: przesunięcie wszystkich wierzchołków o ten sam wektor, zachowanie topologii, pozostałych wielokątów i liczników ID, kumulowanie przesunięć oraz akceptowanie wektora zerowego.
+- Odrzucanie nieistniejącego wielokąta, NaN i obu nieskończoności w każdej współrzędnej przesunięcia.
+- Brak częściowych zmian, gdy dopiero ostatni wierzchołek powoduje przepełnienie wyniku w X lub Y, dla obu znaków, albo odwołuje się do brakującego ID.
 
-Testy dokumentu używają publicznego API. Nie badają prywatnego układu kontenerów ani awarii alokacji pamięci.
+Testy dokumentu używają publicznego API, z wyjątkiem celowego uszkodzenia odwołania do wierzchołka w teście odrzucania ruchu. Nie badają prywatnego układu kontenerów ani awarii alokacji pamięci.
 
 [Vec2Tests.cpp](geometry/Vec2Tests.cpp) zawiera 22 przypadki obejmujące:
 
@@ -63,16 +66,20 @@ Wyniki obliczeń zmiennoprzecinkowych porównujemy z tolerancją bezwzględną `
 - Zbieranie wielu problemów z różnych wielokątów bez przerywania walidacji.
 - Powtarzalność wyniku oraz zachowanie topologii i liczników ID, bez automatycznej naprawy geometrii.
 
-Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture walidatora celowo modyfikuje encje przez `const_cast` wskaźników zwróconych z metod `find...`. Obiekt źródłowy jest nieconst, więc takie usunięcie kwalifikatora jest dozwolone; mechanizm pozostaje wyłącznie w pliku testowym.
+Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture walidatora celowo modyfikuje encje przez `const_cast` wskaźników zwróconych z metod `find...`. Obiekt źródłowy jest nieconst, więc takie usunięcie kwalifikatora jest dozwolone; mechanizm pozostaje wyłącznie w testach. Tę samą technikę wykorzystują przypadki brakujących odwołań w testach przesuwania i hit testingu.
 
-[HitTesterTests.cpp](editor/HitTesterTests.cpp) zawiera 14 przypadków obejmujących:
+[HitTesterTests.cpp](editor/HitTesterTests.cpp) zawiera 27 przypadków obejmujących:
 
 - Pusty dokument, dokładne trafienie przy zerowej tolerancji i brak trafienia poza tolerancją.
 - Wybór najbliższego wierzchołka niezależnie od kolejności kandydatów, także z różnych wielokątów.
 - Kołowy obszar trafienia i akceptowanie odległości dokładnie równej tolerancji.
 - Odrzucanie ujemnej tolerancji oraz zachowanie pierwszego kandydata przy równych odległościach i pokrywających się wierzchołkach.
 - Ujemne i ułamkowe współrzędne świata oraz wyszukiwanie w nowej pozycji po `moveVertex`.
+- `hitTestPolygon`: pusty dokument, pojedynczy trójkąt, figury wklęsłe i samoprzecinające się, obie orientacje oraz promień przechodzący przez wierzchołki.
+- Regułę parzystości, także dla konturu obiegającego ten sam kwadrat dwukrotnie, oraz udział krawędzi zamykającej figurę.
+- Wybór ostatniego rysowanego trafionego wielokąta przy nakładaniu oraz dostępność wszystkich figur rozłącznych.
+- Ujemne i ułamkowe współrzędne, trafienia po `movePolygon` oraz odrzucanie figury z brakującą krawędzią lub jej końcem.
 
-Testy hit testingu używają skończonych współrzędnych i tolerancji. Nie testują komunikatów Windows, przechwytywania myszy ani rysowania zaznaczenia.
+Testy hit testingu używają skończonych współrzędnych i tolerancji. Testy wielokątów sprawdzają punkty poza samym brzegiem; zasada zaznaczania punktów dokładnie na krawędzi lub w wierzchołku pozostaje do ustalenia. Nie testują komunikatów Windows, przechwytywania myszy ani rysowania zaznaczenia.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia cztery zestawy i podaje wspólny wynik **73 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[TestsMain.cpp](TestsMain.cpp) uruchamia cztery zestawy i podaje wspólny wynik **95 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

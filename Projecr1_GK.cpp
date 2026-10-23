@@ -152,9 +152,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             static_cast<double>(clientRect.bottom - 20 - y)
         };
 
+
+        state->selection = {};
+        state->drag = {};
+
         state->selection.vertex = cad::editor::hitTestVertex(state->document, worldPosition, 6.0);
 
         state->drag.vertex.reset();
+        
 
         if (state->selection.vertex)
         {
@@ -164,6 +169,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 state->drag.vertex = vertex->id;
                 state->drag.grabOffset = vertex->position - worldPosition;
+                SetCapture(hWnd);
+            }
+        } else
+        {
+            state->selection.polygon =
+                cad::editor::hitTestPolygon(state->document, worldPosition);
+        
+            if (state->selection.polygon)
+            {
+                state->drag.polygon = state->selection.polygon;
+                state->drag.previousWorldPosition = worldPosition;
                 SetCapture(hWnd);
             }
         }
@@ -178,7 +194,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         auto* state = reinterpret_cast<cad::win32::AppState*>(
             GetWindowLongPtrW(hWnd, GWLP_USERDATA));
 
-        if (!state || !state->drag.vertex)
+        if (!state || (!state->drag.vertex && !state->drag.polygon))
             return 0;
 
         RECT clientRect{};
@@ -191,10 +207,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 clientRect.bottom - 20 - GET_Y_LPARAM(lParam))
         };
 
-        const cad::Vec2 newPosition =
-            worldPosition + state->drag.grabOffset;
+        bool moved = false;
 
-        if (state->document.moveVertex(*state->drag.vertex, newPosition))
+        if (state->drag.vertex)
+        {
+            const cad::Vec2 newPosition =
+                worldPosition + state->drag.grabOffset;
+        
+            moved = state->document.moveVertex(
+                *state->drag.vertex, newPosition);
+        }
+        else if (state->drag.polygon)
+        {
+            const cad::Vec2 delta =
+                worldPosition - state->drag.previousWorldPosition;
+        
+            moved = state->document.movePolygon(
+                *state->drag.polygon, delta);
+            
+            if (moved)
+                state->drag.previousWorldPosition = worldPosition;
+        }
+
+        if (moved)
             InvalidateRect(hWnd, nullptr, FALSE);
 
         return 0;
@@ -204,13 +239,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         auto* state = reinterpret_cast<cad::win32::AppState*>(
             GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-        
+
         if (state)
-            state->drag.vertex.reset();
-        
+            state->drag = {};
+
         if (message == WM_LBUTTONUP && GetCapture() == hWnd)
             ReleaseCapture();
-        
+
         return 0;
     }
     case WM_COMMAND:

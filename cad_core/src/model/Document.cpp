@@ -149,4 +149,35 @@ namespace cad {
         it->second.position = position;
         return true;
     }
+    bool Document::movePolygon(PolygonId id, const Vec2 &delta)
+    {
+        const auto* polygon = findPolygon(id);
+        if(!polygon)
+            return false;
+
+        for(const auto vertexId: polygon->vertices)
+        {
+            const Vertex* vertex = findVertex(vertexId);
+
+            if (!vertex)
+                return false;
+
+            const Vec2 newPosition = vertex->position + delta;
+
+            if (!std::isfinite(newPosition.x) ||
+                !std::isfinite(newPosition.y))
+                {
+                    return false;
+                }
+        }
+
+        for(const auto vertexId: polygon->vertices)
+        {
+            auto it = vertices.find(vertexId);
+            
+            it->second.position = it->second.position + delta;
+        }
+
+        return true;
+    }
 }
