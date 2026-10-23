@@ -20,5 +20,5 @@ namespace cad
 
 namespace cad::win32
 {
-    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex);
+    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon);
 }

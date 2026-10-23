@@ -14,10 +14,25 @@ namespace cad::win32
         };
     }
 
-    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex)
+    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon)
     {
+        HPEN normalPen = CreatePen(PS_SOLID, 2, RGB(0,0,0));
+        HPEN selectedPen = CreatePen(PS_SOLID, 4, RGB(0,120,215));
+
+        if (!normalPen || !selectedPen)
+        {
+            if (normalPen) DeleteObject(normalPen);
+            if (selectedPen) DeleteObject(selectedPen);
+            return;
+        }
+
+        HGDIOBJ previousPen = SelectObject(dc, normalPen);
+
         for (const auto& [id, polygon] : document.getPolygons())
         {
+            SelectObject(
+                dc,
+                selectedPolygon == id ? selectedPen : normalPen);
             for (const auto IdEdge : polygon.edges)
             {
                 const Edge* ed = document.findEdge(IdEdge);
@@ -37,6 +52,8 @@ namespace cad::win32
                 LineTo(dc, p2.x, p2.y);
             }
 
+            SelectObject(dc, normalPen);
+
             for (const auto vertexId : polygon.vertices)
             {
                 const auto* vertex = document.findVertex(vertexId);
@@ -44,7 +61,8 @@ namespace cad::win32
                     continue;
 
                 const POINT p = worldToScreen(vertex->position, clientRect);
-                const int radius = (selectedVertex == vertexId) ? 6 : 3;
+                constexpr int radius = 5;
+                SelectObject(dc, selectedVertex == vertexId ? selectedPen : normalPen);
                 Ellipse(dc, p.x - radius, p.y - radius,
                             p.x + radius, p.y + radius);
 
@@ -52,7 +70,9 @@ namespace cad::win32
             
         }
 
-        // TODO: Convert world coordinates to screen coordinates.
-        // TODO: Draw document edges and vertex markers with GDI.
+        SelectObject(dc, previousPen);
+
+        DeleteObject(selectedPen);
+        DeleteObject(normalPen);
     }
 }

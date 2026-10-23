@@ -321,7 +321,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     {
                         FillRect(targetDc, &clientRect, GetSysColorBrush(COLOR_WINDOW));
                         if (state)
-                            cad::win32::drawDocument(targetDc, state->document, clientRect, state->selection.vertex);
+                            cad::win32::drawDocument(targetDc, state->document, clientRect, state->selection.vertex, state->selection.polygon);
                     };
 
                     if (state && state->backBuffer.resize(dc, width, height))
