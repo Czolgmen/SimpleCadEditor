@@ -154,10 +154,64 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         state->selection.vertex = cad::editor::hitTestVertex(state->document, worldPosition, 6.0);
 
+        state->drag.vertex.reset();
+
+        if (state->selection.vertex)
+        {
+            const auto* vertex = state->document.findVertex(*state->selection.vertex);
+
+            if (vertex)
+            {
+                state->drag.vertex = vertex->id;
+                state->drag.grabOffset = vertex->position - worldPosition;
+                SetCapture(hWnd);
+            }
+        }
+
         InvalidateRect(hWnd, nullptr, FALSE);
 
         return 0;
         break;
+    }
+    case WM_MOUSEMOVE:
+    {
+        auto* state = reinterpret_cast<cad::win32::AppState*>(
+            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+
+        if (!state || !state->drag.vertex)
+            return 0;
+
+        RECT clientRect{};
+        if (!GetClientRect(hWnd, &clientRect))
+            return 0;
+
+        const cad::Vec2 worldPosition{
+            static_cast<double>(GET_X_LPARAM(lParam) - 20),
+            static_cast<double>(
+                clientRect.bottom - 20 - GET_Y_LPARAM(lParam))
+        };
+
+        const cad::Vec2 newPosition =
+            worldPosition + state->drag.grabOffset;
+
+        if (state->document.moveVertex(*state->drag.vertex, newPosition))
+            InvalidateRect(hWnd, nullptr, FALSE);
+
+        return 0;
+    }
+    case WM_LBUTTONUP:
+    case WM_CAPTURECHANGED:
+    {
+        auto* state = reinterpret_cast<cad::win32::AppState*>(
+            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        
+        if (state)
+            state->drag.vertex.reset();
+        
+        if (message == WM_LBUTTONUP && GetCapture() == hWnd)
+            ReleaseCapture();
+        
+        return 0;
     }
     case WM_COMMAND:
         {

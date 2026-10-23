@@ -137,5 +137,16 @@ namespace cad {
 
         return issues;
     }
-}
+    bool Document::moveVertex(VertexId id, const Vec2 &position)
+    {
+        if (!std::isfinite(position.x) || !std::isfinite(position.y))
+            return false;
 
+        auto it = vertices.find(id);
+        if (it == vertices.end())
+            return false;
+
+        it->second.position = position;
+        return true;
+    }
+}
