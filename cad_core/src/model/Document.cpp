@@ -1,4 +1,7 @@
 #include <cad_core/model/Document.h>
+#include <algorithm>
+#include <iterator>
+#include <numeric>
 #include <stdexcept>
 #include <cmath>
 
@@ -179,5 +182,77 @@ namespace cad {
         }
 
         return true;
+    }
+    std::optional<VertexId> Document::splitEdge(EdgeId id)
+    {
+        auto edgeIt = edges.find(id);
+        if (edgeIt == edges.end())
+            return std::nullopt;
+
+        const auto startIt = vertices.find(edgeIt->second.start);
+        const auto endIt = vertices.find(edgeIt->second.end);
+        if (startIt == vertices.end() || endIt == vertices.end())
+            return std::nullopt;
+
+        Polygon* owner = nullptr;
+        std::size_t edgeIndex = 0;
+        for (auto& [polygonId, polygon] : polygons)
+        {
+            const auto position = std::find(polygon.edges.begin(), polygon.edges.end(), id);
+            if (position == polygon.edges.end())
+                continue;
+
+            // A document edge must occur exactly once in exactly one polygon.
+            if (owner || std::count(polygon.edges.begin(), polygon.edges.end(), id) != 1)
+                return std::nullopt;
+
+            owner = &polygon;
+            edgeIndex = static_cast<std::size_t>(std::distance(polygon.edges.begin(), position));
+        }
+
+        if (!owner || owner->vertices.size() < 3 ||
+            owner->vertices.size() != owner->edges.size())
+            return std::nullopt;
+
+        const std::size_t nextIndex = (edgeIndex + 1) % owner->vertices.size();
+        if (owner->vertices[edgeIndex] != edgeIt->second.start ||
+            owner->vertices[nextIndex] != edgeIt->second.end)
+            return std::nullopt;
+
+        const Vec2& start = startIt->second.position;
+        const Vec2& end = endIt->second.position;
+        if (!std::isfinite(start.x) || !std::isfinite(start.y) ||
+            !std::isfinite(end.x) || !std::isfinite(end.y))
+            return std::nullopt;
+
+        // std::midpoint avoids overflow when adding two large finite coordinates.
+        const Vec2 midpoint{std::midpoint(start.x, end.x), std::midpoint(start.y, end.y)};
+        const VertexId newVertexId{nextVertexId};
+        const EdgeId newEdgeId{nextEdgeId};
+
+        // Prepare the updated cycle before modifying the stored entities.
+        auto updatedVertices = owner->vertices;
+        auto updatedEdges = owner->edges;
+        const auto insertionOffset = static_cast<std::ptrdiff_t>(edgeIndex + 1);
+        updatedVertices.insert(updatedVertices.begin() + insertionOffset, newVertexId);
+        updatedEdges.insert(updatedEdges.begin() + insertionOffset, newEdgeId);
+
+        vertices.emplace(newVertexId, Vertex{newVertexId, midpoint});
+        try
+        {
+            edges.emplace(newEdgeId, Edge{newEdgeId, newVertexId, edgeIt->second.end});
+        }
+        catch (...)
+        {
+            vertices.erase(newVertexId);
+            throw;
+        }
+
+        edgeIt->second.end = newVertexId;
+        owner->vertices.swap(updatedVertices);
+        owner->edges.swap(updatedEdges);
+        ++nextVertexId;
+        ++nextEdgeId;
+        return newVertexId;
     }
 }

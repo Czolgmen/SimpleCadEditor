@@ -13,8 +13,8 @@ Pliki należą do projektu aplikacji `Projecr1_GK`, a nie biblioteki `cad_core`.
 
 ## Odpowiedzialności
 
-- `GdiRenderer.h/.cpp`: `cad::win32::drawDocument(HDC, const cad::Document&, const RECT&)` rysuje krawędzie i znaczniki wierzchołków. `worldToScreen` przelicza współrzędne świata na ekran, ze skalą 1:1, marginesem i odwróconą osią Y.
-- `AppState.h`: posiada dokument sceny oraz bufor obrazu. Stan powstaje raz w `wWinMain`, a wskaźnik jest przekazywany do okna przez `WM_NCCREATE` i przechowywany w `GWLP_USERDATA`.
+- `GdiRenderer.h/.cpp`: `cad::win32::drawDocument` rysuje krawędzie i znaczniki wierzchołków oraz wyróżnia przekazane ID zaznaczonego wierzchołka, krawędzi lub wielokąta. `worldToScreen` przelicza współrzędne świata na ekran, ze skalą 1:1, marginesem i odwróconą osią Y.
+- `AppState.h`: posiada dokument sceny, bufor obrazu oraz stan zaznaczenia i przeciągania. Stan powstaje raz w `wWinMain`, a wskaźnik jest przekazywany do okna przez `WM_NCCREATE` i przechowywany w `GWLP_USERDATA`.
 - `BackBuffer.h/.cpp`: posiada pamięciowy DC i odgórny, 32-bitowy `DIBSection`. Automatycznie przywraca poprzednią bitmapę DC i zwalnia swoje zasoby. Kopiowanie i przenoszenie tego właściciela uchwytów są wyłączone.
 
 Przykład dołączania nagłówka z kodu aplikacji:
@@ -22,6 +22,12 @@ Przykład dołączania nagłówka z kodu aplikacji:
 ```cpp
 #include <platform/win32/GdiRenderer.h>
 ```
+
+## Podział krawędzi
+
+Kliknięcie PPM w obszarze rysowania wskazuje element w kolejności: wierzchołek, krawędź, wnętrze wielokąta. Otwiera menu kontekstowe z poleceniem „Podziel krawędź”, aktywnym dla zaznaczonej krawędzi. PPM na pustym tle usuwa zaznaczenie i pokazuje nieaktywne polecenie. Shift+F10 otwiera menu dla bieżącego zaznaczenia bez zmiany wskazanego elementu.
+
+Polecenie wywołuje `Document::splitEdge`. Po sukcesie czyści stan gestu, zaznacza nowy wierzchołek i zleca przerysowanie. Podział następuje w połowie boku, niezależnie od miejsca kliknięcia na nim. Utworzone menu jest zwalniane przez `DestroyMenu` po jego zamknięciu.
 
 ## Przebieg odmalowania
 

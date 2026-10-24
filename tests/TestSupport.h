@@ -23,4 +23,5 @@ namespace cad::tests
     std::span<const TestCase> vec2Tests();
     std::span<const TestCase> validationTests();
     std::span<const TestCase> hitTesterTests();
+    std::span<const TestCase> splitEdgeTests();
 }

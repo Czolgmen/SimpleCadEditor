@@ -19,7 +19,8 @@ int main()
         TestSuite{"Document", cad::tests::documentTests()},
         TestSuite{"Vec2", cad::tests::vec2Tests()},
         TestSuite{"Validation", cad::tests::validationTests()},
-        TestSuite{"HitTester", cad::tests::hitTesterTests()}
+        TestSuite{"HitTester", cad::tests::hitTesterTests()},
+        TestSuite{"SplitEdge", cad::tests::splitEdgeTests()}
     };
 
     std::size_t total = 0;

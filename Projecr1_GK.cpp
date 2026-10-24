@@ -250,13 +250,102 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         return 0;
     }
+    case WM_CONTEXTMENU:
+    {
+        auto* state = reinterpret_cast<cad::win32::AppState*>(
+            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        RECT clientRect{};
+        if (!state || !GetClientRect(hWnd, &clientRect))
+            return 0;
+
+        POINT screenPosition{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        const bool fromKeyboard = screenPosition.x == -1 && screenPosition.y == -1;
+        if (fromKeyboard)
+        {
+            // Shift+F10 uses the current selection and opens the menu in the client area.
+            screenPosition = {
+                clientRect.left + (clientRect.right - clientRect.left) / 2,
+                clientRect.top + (clientRect.bottom - clientRect.top) / 2};
+            if (!ClientToScreen(hWnd, &screenPosition))
+                return 0;
+        }
+        else
+        {
+            POINT clientPosition = screenPosition;
+            if (!ScreenToClient(hWnd, &clientPosition) || !PtInRect(&clientRect, clientPosition))
+                return DefWindowProcW(hWnd, message, wParam, lParam);
+
+            const cad::Vec2 worldPosition{
+                static_cast<double>(clientPosition.x - 20),
+                static_cast<double>(clientRect.bottom - 20 - clientPosition.y)};
+
+            state->selection = {};
+            state->selection.vertex = cad::editor::hitTestVertex(state->document, worldPosition, 6.0);
+            if (!state->selection.vertex)
+            {
+                state->selection.edge = cad::editor::hitTestEdge(state->document, worldPosition, 6.0);
+                if (!state->selection.edge)
+                    state->selection.polygon = cad::editor::hitTestPolygon(state->document, worldPosition);
+            }
+        }
+
+        state->drag = {};
+        if (GetCapture() == hWnd)
+            ReleaseCapture();
+
+        InvalidateRect(hWnd, nullptr, FALSE);
+        UpdateWindow(hWnd);
+
+        HMENU menu = CreatePopupMenu();
+        if (!menu)
+            return 0;
+
+        const bool canSplit = state->selection.edge &&
+            state->document.findEdge(*state->selection.edge);
+        const UINT flags = MF_STRING | (canSplit ? MF_ENABLED : MF_GRAYED);
+        if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź"))
+        {
+            DestroyMenu(menu);
+            return 0;
+        }
+
+        const UINT command = TrackPopupMenu(
+            menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+            screenPosition.x, screenPosition.y, 0, hWnd, nullptr);
+        DestroyMenu(menu);
+        if (command != 0)
+            SendMessageW(hWnd, WM_COMMAND, MAKEWPARAM(command, 0), 0);
+        return 0;
+    }
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
-            
+            case IDM_SPLIT_EDGE:
+            {
+                auto* state = reinterpret_cast<cad::win32::AppState*>(
+                    GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+                if (!state || !state->selection.edge)
+                    return 0;
+
+                const auto vertexId = state->document.splitEdge(*state->selection.edge);
+                if (!vertexId)
+                {
+                    MessageBoxW(hWnd, L"Nie udało się podzielić wybranej krawędzi.",
+                        L"Podział krawędzi", MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+
+                state->drag = {};
+                if (GetCapture() == hWnd)
+                    ReleaseCapture();
+                state->selection = {};
+                state->selection.vertex = vertexId;
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                 break;

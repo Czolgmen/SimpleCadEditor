@@ -9,6 +9,7 @@
 #include <cad_core/geometry/Vec2.h>
 
 #include <map>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -37,6 +38,8 @@ namespace cad
         std::vector<ValidationIssue> validate() const;
         bool moveVertex(VertexId id, const Vec2& position);
         bool movePolygon(PolygonId id, const Vec2& delta);
+        // Keeps the original edge ID for start -> midpoint; returns the new vertex ID.
+        std::optional<VertexId> splitEdge(EdgeId id);
     };
 
 }

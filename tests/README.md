@@ -86,4 +86,14 @@ Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture wali
 
 Testy hit testingu używają skończonych współrzędnych i tolerancji. Testy wielokątów sprawdzają punkty poza samym brzegiem; zasada zaznaczania punktów dokładnie na krawędzi lub w wierzchołku pozostaje do ustalenia. Nie testują komunikatów Windows, przechwytywania myszy ani rysowania zaznaczenia.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia cztery zestawy i podaje wspólny wynik **110 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[SplitEdgeTests.cpp](core/SplitEdgeTests.cpp) zawiera 9 przypadków obejmujących:
+
+- Podział pierwszej, środkowej i zamykającej krawędzi oraz ponowne dzielenie obu połówek.
+- Pozycję nowego wierzchołka, kolejność ID, połączenia krawędzi, zachowanie istniejących wierzchołków i pozostałych wielokątów oraz poprawne zużycie liczników ID.
+- Zachowanie ID oryginalnej krawędzi dla `start -> środek`; druga połowa dostaje nowe ID.
+- Odrzucanie nieznanego ID, brakujących końców, braku właściciela i niezgodności z cyklem wierzchołków bez zmian modelu i zużycia ID.
+- Skończony środek przy skrajnych skończonych współrzędnych, krawędź zerowej długości oraz odrzucanie NaN i obu nieskończoności w każdej współrzędnej obu końców.
+
+Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co walidator. Testy nie symulują błędów alokacji pamięci.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia pięć zestawów i podaje wspólny wynik **119 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
