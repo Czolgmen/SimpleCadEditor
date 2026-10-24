@@ -33,6 +33,9 @@
     <ClInclude Include="src\editor\EditorSession.h">
       <Filter>src\editor</Filter>
     </ClInclude>
+    <ClInclude Include="src\editor\LengthInput.h">
+      <Filter>src\editor</Filter>
+    </ClInclude>
     <ClInclude Include="src\editor\DragState.h">
       <Filter>src\editor</Filter>
     </ClInclude>
@@ -60,12 +63,18 @@
     <ClInclude Include="src\platform\win32\GdiRenderer.h">
       <Filter>src\platform\win32</Filter>
     </ClInclude>
+    <ClInclude Include="src\platform\win32\LengthDialog.h">
+      <Filter>src\platform\win32</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\editor\HitTester.cpp">
       <Filter>src\editor</Filter>
     </ClCompile>
     <ClCompile Include="src\editor\EditorSession.cpp">
+      <Filter>src\editor</Filter>
+    </ClCompile>
+    <ClCompile Include="src\editor\LengthInput.cpp">
       <Filter>src\editor</Filter>
     </ClCompile>
     <ClCompile Include="Projecr1_GK.cpp">
@@ -75,6 +84,9 @@
       <Filter>src\platform\win32</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp">
+      <Filter>src\platform\win32</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\win32\LengthDialog.cpp">
       <Filter>src\platform\win32</Filter>
     </ClCompile>
   </ItemGroup>

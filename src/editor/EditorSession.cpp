@@ -1,5 +1,7 @@
 #include <editor/EditorSession.h>
 #include <editor/HitTester.h>
+#include <cad_core/solver/ConstraintSolver.h>
+
 
 #include <algorithm>
 #include <cmath>
@@ -77,12 +79,23 @@ namespace cad::editor
         if (!drag_ || !isFinite(worldPosition))
             return false;
 
-        // Each candidate starts from the same document, avoiding accumulated drag error.
-        Document candidate = drag_->initialDocument;
+        // Vertex solving continues from the last accepted preview; polygon translation
+        // remains absolute relative to the initial snapshot.
+        Document candidate = std::holds_alternative<DraggingVertex>(drag_->state)
+            ? document_ : drag_->initialDocument;
         bool moved = false;
         if (const auto* vertex = std::get_if<DraggingVertex>(&drag_->state))
         {
             moved = candidate.moveVertex(vertex->vertex, worldPosition + vertex->grabOffset);
+            if (moved)
+            {
+                const auto result = solver::solveFixedLengths(
+                    candidate,
+                    candidate.getFixedLengthConstraints(),
+                    vertex->vertex);
+
+                moved = result.status == solver::SolveStatus::Converged;
+            }
         }
         else
         {
@@ -153,6 +166,59 @@ namespace cad::editor
             return false;
         pointerUp();
         selection_ = {};
+        return true;
+    }
+
+    std::optional<double> EditorSession::selectedEdgeLength() const
+    {
+        if (!selection_.edge)
+            return std::nullopt;
+        const auto* edge = document_.findEdge(*selection_.edge);
+        if (!edge)
+            return std::nullopt;
+        const auto* start = document_.findVertex(edge->start);
+        const auto* end = document_.findVertex(edge->end);
+        if (!start || !end)
+            return std::nullopt;
+        const double length = std::hypot(end->position.x - start->position.x, end->position.y - start->position.y);
+        return std::isfinite(length) ? std::optional<double>{length} : std::nullopt;
+    }
+
+    std::optional<double> EditorSession::selectedFixedLength() const
+    {
+        if (!selection_.edge)
+            return std::nullopt;
+        for (const auto& relation : document_.getFixedLengthConstraints())
+            if (relation.edge == *selection_.edge)
+                return relation.length;
+        return std::nullopt;
+    }
+
+    bool EditorSession::setSelectedEdgeLength(double length)
+    {
+        if (!selection_.edge)
+            return false;
+        const auto* edge = document_.findEdge(*selection_.edge);
+        if (!edge)
+            return false;
+        const VertexId fixedVertex = edge->start;
+        Document candidate = document_;
+        if (!candidate.setFixedLength(*selection_.edge, length))
+            return false;
+        const auto result = solver::solveFixedLengths(candidate, candidate.getFixedLengthConstraints(), fixedVertex);
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
+        pointerUp();
+        return true;
+    }
+
+    bool EditorSession::removeSelectedEdgeLength()
+    {
+        if (!selection_.edge || !document_.removeFixedLength(*selection_.edge))
+            return false;
+        pointerUp();
         return true;
     }
 }

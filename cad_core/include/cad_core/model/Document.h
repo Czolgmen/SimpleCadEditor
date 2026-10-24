@@ -6,6 +6,8 @@
 #include <cad_core/model/Id.h>
 #include <cad_core/model/Validation.h>
 
+#include <cad_core/constraints/FixedLengthConstraint.h>
+
 #include <cad_core/geometry/Vec2.h>
 
 #include <map>
@@ -23,6 +25,7 @@ namespace cad
         std::map<VertexId, Vertex> vertices;
         std::map<PolygonId, Polygon> polygons;
         std::map<EdgeId, Edge> edges;
+        std::vector<constraint::FixedLengthConstraint> fixedLengthConstraints;
 
         std::uint64_t nextVertexId = 1;
         std::uint64_t nextEdgeId = 1;
@@ -42,6 +45,12 @@ namespace cad
         std::optional<VertexId> splitEdge(EdgeId id);
         // Replaces both incident edges with a new segment; triangles cannot lose vertices.
         bool deleteVertex(VertexId id);
+
+        std::span<const constraint::FixedLengthConstraint> getFixedLengthConstraints() const;
+
+        bool setFixedLength(EdgeId edge, double length);
+        bool removeFixedLength(EdgeId edge);
+
     };
 
 }

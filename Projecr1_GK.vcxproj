@@ -73,6 +73,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)cad_core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -150,18 +151,22 @@
     <ClInclude Include="targetver.h" />
     <ClInclude Include="src\editor\HitTester.h" />
     <ClInclude Include="src\editor\EditorSession.h" />
+    <ClInclude Include="src\editor\LengthInput.h" />
     <ClInclude Include="src\editor\DragState.h" />
     <ClInclude Include="src\editor\Selection.h" />
     <ClInclude Include="src\platform\win32\AppState.h" />
     <ClInclude Include="src\platform\win32\BackBuffer.h" />
     <ClInclude Include="src\platform\win32\GdiRenderer.h" />
+    <ClInclude Include="src\platform\win32\LengthDialog.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Projecr1_GK.cpp" />
     <ClCompile Include="src\editor\HitTester.cpp" />
     <ClCompile Include="src\editor\EditorSession.cpp" />
+    <ClCompile Include="src\editor\LengthInput.cpp" />
     <ClCompile Include="src\platform\win32\BackBuffer.cpp" />
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp" />
+    <ClCompile Include="src\platform\win32\LengthDialog.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\platform\win32\README.md" />

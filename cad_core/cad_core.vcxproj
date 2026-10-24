@@ -74,6 +74,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="include\cad_core\constraints\FixedLengthConstraint.h" />
     <ClInclude Include="include\cad_core\demo\DemoScene.hpp" />
     <ClInclude Include="include\cad_core\geometry\Vec2.h" />
     <ClInclude Include="include\cad_core\model\Id.h" />
@@ -82,11 +83,18 @@
     <ClInclude Include="include\cad_core\model\Polygon.h" />
     <ClInclude Include="include\cad_core\model\Document.h" />
     <ClInclude Include="include\cad_core\model\Validation.h" />
+    <ClInclude Include="include\cad_core\solver\ConstraintSolver.h" />
+    <ClInclude Include="src\solver\DenseLinearAlgebra.h" />
+    <ClInclude Include="src\solver\SolverDetail.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\constraints\FixedLengthConstraint.cpp" />
     <ClCompile Include="src\demo\DemoScene.cpp" />
     <ClCompile Include="src\geometry\Vec2.cpp" />
     <ClCompile Include="src\model\Document.cpp" />
+    <ClCompile Include="src\solver\ConstraintSolver.cpp" />
+    <ClCompile Include="src\solver\DenseLinearAlgebra.cpp" />
+    <ClCompile Include="src\solver\Jacobian.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />

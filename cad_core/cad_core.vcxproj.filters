@@ -4,6 +4,9 @@
     <Filter Include="include">
       <UniqueIdentifier>{D64F8774-CE35-48C7-A804-91AA8E909847}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\constraints">
+      <UniqueIdentifier>{8873356B-2698-4C10-BEDB-4A96A2920BF2}</UniqueIdentifier>
+    </Filter>
     <Filter Include="include\geometry">
       <UniqueIdentifier>{C875A4E1-9D17-4E39-B0AD-91C3BDB84608}</UniqueIdentifier>
     </Filter>
@@ -16,6 +19,9 @@
     <Filter Include="src">
       <UniqueIdentifier>{1A250576-C14A-4B6D-B855-04521005AB61}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\constraints">
+      <UniqueIdentifier>{E58CA98A-3858-4D87-925C-7FE98BD647C5}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\geometry">
       <UniqueIdentifier>{42DD365C-175F-451D-AB16-0EC4CDDAED9E}</UniqueIdentifier>
     </Filter>
@@ -25,8 +31,17 @@
     <Filter Include="src\demo">
       <UniqueIdentifier>{5C7D0576-C659-4D91-9DE6-16442BD885A9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\solver">
+      <UniqueIdentifier>{C638062A-4FB8-4E57-88A1-7624560CA07E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\solver">
+      <UniqueIdentifier>{A38EA7F7-CCDF-4C37-A071-E8CF730FD6C5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\cad_core\constraints\FixedLengthConstraint.h">
+      <Filter>include\constraints</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\demo\DemoScene.hpp">
       <Filter>include\demo</Filter>
     </ClInclude>
@@ -51,8 +66,20 @@
     <ClInclude Include="include\cad_core\model\Validation.h">
       <Filter>include\model</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\solver\ConstraintSolver.h">
+      <Filter>include\solver</Filter>
+    </ClInclude>
+    <ClInclude Include="src\solver\DenseLinearAlgebra.h">
+      <Filter>src\solver</Filter>
+    </ClInclude>
+    <ClInclude Include="src\solver\SolverDetail.h">
+      <Filter>src\solver</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\constraints\FixedLengthConstraint.cpp">
+      <Filter>src\constraints</Filter>
+    </ClCompile>
     <ClCompile Include="src\demo\DemoScene.cpp">
       <Filter>src\demo</Filter>
     </ClCompile>
@@ -61,6 +88,15 @@
     </ClCompile>
     <ClCompile Include="src\model\Document.cpp">
       <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="src\solver\ConstraintSolver.cpp">
+      <Filter>src\solver</Filter>
+    </ClCompile>
+    <ClCompile Include="src\solver\DenseLinearAlgebra.cpp">
+      <Filter>src\solver</Filter>
+    </ClCompile>
+    <ClCompile Include="src\solver\Jacobian.cpp">
+      <Filter>src\solver</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

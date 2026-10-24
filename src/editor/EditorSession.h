@@ -30,6 +30,11 @@ namespace cad::editor
         bool canDeleteSelectedVertex() const;
         bool splitSelectedEdge();
         bool deleteSelectedVertex();
+        std::optional<double> selectedEdgeLength() const;
+        std::optional<double> selectedFixedLength() const;
+        // Sets/updates the relation on a candidate, solving with the edge's start pinned.
+        bool setSelectedEdgeLength(double length);
+        bool removeSelectedEdgeLength();
 
     private:
         struct DragTransaction

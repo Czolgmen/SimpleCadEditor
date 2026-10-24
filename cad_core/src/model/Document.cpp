@@ -248,6 +248,7 @@ namespace cad {
             throw;
         }
 
+        removeFixedLength(id);
         edgeIt->second.end = newVertexId;
         owner->vertices.swap(updatedVertices);
         owner->edges.swap(updatedEdges);
@@ -314,10 +315,62 @@ namespace cad {
         edges.emplace(newEdgeId, Edge{newEdgeId, previousId, nextId});
         owner->vertices.swap(updatedVertices);
         owner->edges.swap(updatedEdges);
+
+        removeFixedLength(incomingIt->first);
+        removeFixedLength(outgoingIt->first);
+
         edges.erase(incomingIt);
         edges.erase(outgoingIt);
         vertices.erase(vertexIt);
         ++nextEdgeId;
+        return true;
+    }
+    std::span<const constraint::FixedLengthConstraint> Document::getFixedLengthConstraints() const
+    {
+        return fixedLengthConstraints;
+    }
+    bool Document::setFixedLength(EdgeId edge, double length)
+    {
+        auto relation = constraint::FixedLengthConstraint{edge, length};
+
+        if(!constraint::fixedLengthError(*this, relation))
+        {
+            return false;
+        }
+
+        auto it = std::find_if(
+            fixedLengthConstraints.begin(),
+            fixedLengthConstraints.end(),
+            [edge](const auto& constraint)
+            {
+                return constraint.edge == edge;
+            }
+        );
+
+        if (it != fixedLengthConstraints.end())
+        {
+            it->length = length;
+        } else
+        {
+            fixedLengthConstraints.push_back(relation);
+        }
+
+        return true;
+    }
+    bool Document::removeFixedLength(EdgeId edge)
+    {
+        auto it = std::find_if(
+            fixedLengthConstraints.begin(),
+            fixedLengthConstraints.end(),
+            [edge](const auto& constraint)
+            {
+                return constraint.edge == edge;
+            });
+
+        if (it == fixedLengthConstraints.end())
+            return false;
+
+        fixedLengthConstraints.erase(it);
         return true;
     }
 }

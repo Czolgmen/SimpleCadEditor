@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <utility>
 
 namespace
@@ -19,8 +20,37 @@ namespace
         return {Vec2{0, 0}, Vec2{10, 0}, Vec2{0, 10}};
     }
 
+    void addFixedLengths(Document& document)
+    {
+        for (const auto& [id, polygon] : document.getPolygons())
+        {
+            (void)id;
+            for (const EdgeId edge : polygon.edges)
+                require(document.setFixedLength(edge, 100 + static_cast<double>(edge.value)),
+                    "Could not prepare a fixed-length constraint");
+        }
+    }
+
+    void requireFixedLengthsAfterRemoving(const Document& actual, const Document& before,
+        std::span<const EdgeId> removed = {})
+    {
+        const auto remaining = actual.getFixedLengthConstraints();
+        std::size_t index = 0;
+        for (const auto& relation : before.getFixedLengthConstraints())
+        {
+            if (std::find(removed.begin(), removed.end(), relation.edge) != removed.end())
+                continue;
+            require(index < remaining.size() && remaining[index].edge == relation.edge &&
+                remaining[index].length == relation.length, "Unrelated constraint changed, disappeared or moved");
+            ++index;
+        }
+        require(index == remaining.size(), "A removed constraint survived or a new edge inherited a constraint");
+    }
+
     void requireSameState(const Document& actual, const Document& expected, PolygonId skip = {})
     {
+        if (skip == PolygonId{})
+            requireFixedLengthsAfterRemoving(actual, expected);
         require(actual.getPolygons().size() == expected.getPolygons().size(), "Polygon count changed");
         for (const auto& [id, polygon] : expected.getPolygons())
         {
@@ -92,6 +122,9 @@ namespace
                 second->start == *result && second->end == originalEdge.end,
             "Split halves have incorrect endpoints");
 
+        const std::array removedConstraints{originalEdgeId};
+        requireFixedLengthsAfterRemoving(document, before, removedConstraints);
+
         for (const VertexId vertexId : original.vertices)
         {
             const Vertex* oldVertex = before.findVertex(vertexId);
@@ -152,6 +185,7 @@ namespace
 
         Document document;
         document.addPolygon(triangle());
+        addFixedLengths(document);
         const Document before = document;
         for (const EdgeId id : {EdgeId{}, EdgeId{4}, EdgeId{std::numeric_limits<std::uint64_t>::max()}})
         {
@@ -168,6 +202,7 @@ namespace
         {
             Document document;
             const PolygonId id = document.addPolygon(triangle());
+            addFixedLengths(document);
             const Document before = document;
             const EdgeId edgeId = document.findPolygon(id)->edges.front();
             // Deliberate test-only corruption of an originally non-const document.
@@ -188,6 +223,7 @@ namespace
     {
         Document document;
         const PolygonId id = document.addPolygon(triangle());
+        addFixedLengths(document);
         const Document before = document;
         auto* polygon = const_cast<Polygon*>(document.findPolygon(id));
         const auto originalEdges = polygon->edges;
@@ -204,6 +240,7 @@ namespace
     {
         Document document;
         const PolygonId id = document.addPolygon(triangle());
+        addFixedLengths(document);
         const Document before = document;
         const EdgeId edgeId = document.findPolygon(id)->edges.front();
         auto* edge = const_cast<Edge*>(document.findEdge(edgeId));
@@ -235,6 +272,7 @@ namespace
         Document document;
         const std::array positions{Vec2{2, 3}, Vec2{2, 3}, Vec2{10, 10}};
         const PolygonId id = document.addPolygon(positions);
+        addFixedLengths(document);
         checkSplit(document, id, 0, Vec2{2, 3});
     }
 
@@ -249,6 +287,7 @@ namespace
                 {
                     Document document;
                     const PolygonId id = document.addPolygon(triangle());
+                    addFixedLengths(document);
                     const Document before = document;
                     const Polygon* polygon = document.findPolygon(id);
                     auto* vertex = const_cast<Vertex*>(document.findVertex(polygon->vertices.at(endpoint)));
@@ -266,6 +305,39 @@ namespace
             }
         }
     }
+
+    void constrainedSplitClearsOnlyTheDividedEdge()
+    {
+        const std::array midpoints{Vec2{5, 0}, Vec2{5, 5}, Vec2{0, 5}};
+        for (std::size_t index = 0; index < midpoints.size(); ++index)
+        {
+            Document document;
+            const PolygonId id = document.addPolygon(triangle());
+            document.addPolygon(triangle());
+            addFixedLengths(document);
+            const EdgeId divided = document.findPolygon(id)->edges[index];
+            checkSplit(document, id, index, midpoints[index]);
+            require(document.findEdge(divided) != nullptr, "Original edge ID should remain on the first half");
+            require(document.getFixedLengthConstraints().size() == 5,
+                "Only the divided edge's constraint should be removed");
+        }
+    }
+
+    void unconstrainedSplitPreservesAllExistingLengths()
+    {
+        const std::array midpoints{Vec2{5, 0}, Vec2{5, 5}, Vec2{0, 5}};
+        for (std::size_t index = 0; index < midpoints.size(); ++index)
+        {
+            Document document;
+            const PolygonId id = document.addPolygon(triangle());
+            document.addPolygon(triangle());
+            addFixedLengths(document);
+            require(document.removeFixedLength(document.findPolygon(id)->edges[index]), "Fixture removal failed");
+            const Document before = document;
+            checkSplit(document, id, index, midpoints[index]);
+            requireFixedLengthsAfterRemoving(document, before);
+        }
+    }
 }
 
 namespace cad::tests
@@ -281,7 +353,9 @@ namespace cad::tests
             TestCase{"incorrect edge connection rejects without mutation", rejectsIncorrectEdgeConnection},
             TestCase{"finite extreme coordinates produce finite midpoint", midpointDoesNotOverflowForFiniteCoordinates},
             TestCase{"zero-length edge splits at its only position", splitsZeroLengthEdge},
-            TestCase{"non-finite endpoint coordinates reject without mutation", rejectsNonFiniteEndpointCoordinates}
+            TestCase{"non-finite endpoint coordinates reject without mutation", rejectsNonFiniteEndpointCoordinates},
+            TestCase{"constrained first, middle and closing splits clear only the divided edge's relation", constrainedSplitClearsOnlyTheDividedEdge},
+            TestCase{"unconstrained splits preserve all existing lengths", unconstrainedSplitPreservesAllExistingLengths}
         };
         return tests;
     }

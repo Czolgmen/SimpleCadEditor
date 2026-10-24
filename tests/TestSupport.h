@@ -26,4 +26,9 @@ namespace cad::tests
     std::span<const TestCase> splitEdgeTests();
     std::span<const TestCase> deleteVertexTests();
     std::span<const TestCase> editorSessionTests();
+    std::span<const TestCase> fixedLengthConstraintTests();
+    std::span<const TestCase> denseLinearAlgebraTests();
+    std::span<const TestCase> constraintSolverTests();
+    std::span<const TestCase> jacobianTests();
+    std::span<const TestCase> lengthInputTests();
 }

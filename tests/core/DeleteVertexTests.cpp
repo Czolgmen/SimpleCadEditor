@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <span>
 
 namespace
 {
@@ -18,8 +19,37 @@ namespace
         return {Vec2{0, 0}, Vec2{10, 0}, Vec2{10, 10}, Vec2{0, 10}};
     }
 
+    void addFixedLengths(Document& document)
+    {
+        for (const auto& [id, polygon] : document.getPolygons())
+        {
+            (void)id;
+            for (const EdgeId edge : polygon.edges)
+                require(document.setFixedLength(edge, 100 + static_cast<double>(edge.value)),
+                    "Could not prepare a fixed-length constraint");
+        }
+    }
+
+    void requireFixedLengthsAfterRemoving(const Document& actual, const Document& before,
+        std::span<const EdgeId> removed = {})
+    {
+        const auto remaining = actual.getFixedLengthConstraints();
+        std::size_t index = 0;
+        for (const auto& relation : before.getFixedLengthConstraints())
+        {
+            if (std::find(removed.begin(), removed.end(), relation.edge) != removed.end())
+                continue;
+            require(index < remaining.size() && remaining[index].edge == relation.edge &&
+                remaining[index].length == relation.length, "Unrelated constraint changed, disappeared or moved");
+            ++index;
+        }
+        require(index == remaining.size(), "A removed constraint survived or the joining edge inherited a constraint");
+    }
+
     void requireSameState(const Document& actual, const Document& expected, PolygonId skip = {})
     {
+        if (skip == PolygonId{})
+            requireFixedLengthsAfterRemoving(actual, expected);
         require(actual.getPolygons().size() == expected.getPolygons().size(), "Polygon count changed");
         for (const auto& [id, polygon] : expected.getPolygons())
         {
@@ -67,6 +97,9 @@ namespace
         require(document.findEdge(original.edges[previousIndex]) == nullptr &&
                 document.findEdge(original.edges[index]) == nullptr,
             "Incident edges must both be removed from storage");
+
+        const std::array removedConstraints{original.edges[previousIndex], original.edges[index]};
+        requireFixedLengthsAfterRemoving(document, before, removedConstraints);
 
         const Polygon* polygon = document.findPolygon(id);
         auto expectedVertices = original.vertices;
@@ -126,6 +159,7 @@ namespace
         Document document;
         const std::array positions{Vec2{0, 0}, Vec2{10, 0}, Vec2{15, 5}, Vec2{10, 10}, Vec2{0, 10}};
         const PolygonId id = document.addPolygon(positions);
+        addFixedLengths(document);
         checkDeletion(document, id, 2);
         checkDeletion(document, id, 0);
         const Document before = document;
@@ -142,6 +176,7 @@ namespace
         const PolygonId id = document.addPolygon(square());
         const VertexId removed = document.findPolygon(id)->vertices[1];
         checkDeletion(document, id, 1);
+        addFixedLengths(document);
         const Document before = document;
         for (const VertexId missing : {VertexId{}, removed, VertexId{5},
                  VertexId{std::numeric_limits<std::uint64_t>::max()}})
@@ -155,6 +190,7 @@ namespace
         Document document;
         const std::array positions{Vec2{0, 0}, Vec2{10, 0}, Vec2{0, 10}};
         const PolygonId id = document.addPolygon(positions);
+        addFixedLengths(document);
         const Document before = document;
         const auto ids = document.findPolygon(id)->vertices;
         for (const VertexId vertexId : ids)
@@ -181,6 +217,7 @@ namespace
         {
             Document document;
             const PolygonId id = document.addPolygon(square());
+            addFixedLengths(document);
             const Document before = document;
             auto* polygon = const_cast<Polygon*>(document.findPolygon(id));
             const auto originalVertices = polygon->vertices;
@@ -200,6 +237,7 @@ namespace
         {
             Document document;
             const PolygonId id = document.addPolygon(square());
+            addFixedLengths(document);
             const Document before = document;
             auto* polygon = const_cast<Polygon*>(document.findPolygon(id));
             const auto originalEdges = polygon->edges;
@@ -219,6 +257,7 @@ namespace
         {
             Document document;
             const PolygonId id = document.addPolygon(square());
+            addFixedLengths(document);
             const Document before = document;
             const Polygon* polygon = document.findPolygon(id);
             auto* edge = const_cast<Edge*>(document.findEdge(polygon->edges[edgeIndex]));
@@ -240,6 +279,7 @@ namespace
             Document document;
             const PolygonId id = document.addPolygon(square());
             const PolygonId otherId = document.addPolygon(square());
+            addFixedLengths(document);
             const Document before = document;
             auto* polygon = const_cast<Polygon*>(document.findPolygon(id));
             auto* other = const_cast<Polygon*>(document.findPolygon(otherId));
@@ -269,6 +309,7 @@ namespace
                 {
                     Document document;
                     const PolygonId id = document.addPolygon(square());
+                    addFixedLengths(document);
                     const Document before = document;
                     const Polygon* polygon = document.findPolygon(id);
                     auto* vertex = const_cast<Vertex*>(document.findVertex(polygon->vertices[index]));
@@ -292,7 +333,34 @@ namespace
         Document document;
         const std::array positions{Vec2{0, 0}, Vec2{0, 0}, Vec2{0, 0}, Vec2{10, 10}};
         const PolygonId id = document.addPolygon(positions);
+        addFixedLengths(document);
         checkDeletion(document, id, 1);
+    }
+
+    void deletionClearsOnlyIncidentLengthsInEveryConfiguration()
+    {
+        for (std::size_t index = 0; index < 4; ++index)
+        {
+            // Cover neither, either one, and both incident edges being constrained.
+            for (unsigned mask = 0; mask < 4; ++mask)
+            {
+                Document document;
+                const PolygonId id = document.addPolygon(square());
+                document.addPolygon(square());
+                addFixedLengths(document);
+                const Polygon original = *document.findPolygon(id);
+                const std::size_t previous = index == 0 ? 3 : index - 1;
+                if ((mask & 1) == 0)
+                    require(document.removeFixedLength(original.edges[previous]), "Fixture removal failed");
+                if ((mask & 2) == 0)
+                    require(document.removeFixedLength(original.edges[index]), "Fixture removal failed");
+
+                checkDeletion(document, id, index);
+                // Two untouched sides of the edited square and all four sides of the other square.
+                require(document.getFixedLengthConstraints().size() == 6,
+                    "Deletion did not preserve exactly the unrelated constraints");
+            }
+        }
     }
 }
 
@@ -311,7 +379,8 @@ namespace cad::tests
             TestCase{"incorrect incident connections reject without mutation", rejectsIncorrectIncidentConnections},
             TestCase{"broken or ambiguous ownership rejects without mutation", rejectsBrokenOrAmbiguousOwnership},
             TestCase{"non-finite local positions reject without mutation", rejectsNonFiniteLocalPositions},
-            TestCase{"coincident positions are allowed", allowsCoincidentPositions}
+            TestCase{"coincident positions are allowed", allowsCoincidentPositions},
+            TestCase{"deletion clears only incident lengths for every vertex and constraint combination", deletionClearsOnlyIncidentLengthsInEveryConfiguration}
         };
         return tests;
     }

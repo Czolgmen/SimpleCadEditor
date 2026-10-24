@@ -22,7 +22,12 @@ int main()
         TestSuite{"HitTester", cad::tests::hitTesterTests()},
         TestSuite{"SplitEdge", cad::tests::splitEdgeTests()},
         TestSuite{"DeleteVertex", cad::tests::deleteVertexTests()},
-        TestSuite{"EditorSession", cad::tests::editorSessionTests()}
+        TestSuite{"EditorSession", cad::tests::editorSessionTests()},
+        TestSuite{"FixedLengthConstraint", cad::tests::fixedLengthConstraintTests()},
+        TestSuite{"DenseLinearAlgebra", cad::tests::denseLinearAlgebraTests()},
+        TestSuite{"ConstraintSolver", cad::tests::constraintSolverTests()},
+        TestSuite{"Jacobian", cad::tests::jacobianTests()},
+        TestSuite{"LengthInput", cad::tests::lengthInputTests()}
     };
 
     std::size_t total = 0;

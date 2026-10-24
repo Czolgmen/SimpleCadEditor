@@ -6,6 +6,7 @@
 
 #include <platform/win32/AppState.h>
 #include <platform/win32/GdiRenderer.h>
+#include <platform/win32/LengthDialog.h>
 #include <cad_core/demo/DemoScene.hpp>
 
 #include <windowsx.h>
@@ -278,8 +279,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const bool canSplit = state->editor.canSplitSelectedEdge();
         const UINT flags = MF_STRING | (canSplit ? MF_ENABLED : MF_GRAYED);
         const UINT deleteFlags = MF_STRING | (state->editor.canDeleteSelectedVertex() ? MF_ENABLED : MF_GRAYED);
+        const UINT lengthFlags = MF_STRING | (state->editor.selectedEdgeLength() ? MF_ENABLED : MF_GRAYED);
+        const UINT removeLengthFlags = MF_STRING | (state->editor.selectedFixedLength() ? MF_ENABLED : MF_GRAYED);
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
-            !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete"))
+            !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
+            !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
+            !AppendMenuW(menu, lengthFlags, IDM_SET_FIXED_LENGTH,
+                state->editor.selectedFixedLength() ? L"Zmień stałą długość..." : L"Ustaw stałą długość...") ||
+            !AppendMenuW(menu, removeLengthFlags, IDM_REMOVE_FIXED_LENGTH, L"Usuń ograniczenie długości"))
         {
             DestroyMenu(menu);
             return 0;
@@ -299,6 +306,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
+            case IDM_SET_FIXED_LENGTH:
+            {
+                auto* state = getAppState(hWnd);
+                if (!state)
+                    return 0;
+                const auto currentLength = state->editor.selectedEdgeLength();
+                if (!currentLength)
+                    return 0;
+                const auto length = cad::win32::askFixedLength(hInst, hWnd, *currentLength);
+                if (!length)
+                    return 0;
+                if (!state->editor.setSelectedEdgeLength(*length))
+                {
+                    MessageBoxW(hWnd, L"Nie udało się dopasować geometrii do podanej długości. Dokument nie został zmieniony.",
+                        L"Stała długość", MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+                releaseMouseCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+            case IDM_REMOVE_FIXED_LENGTH:
+            {
+                auto* state = getAppState(hWnd);
+                if (state && state->editor.removeSelectedEdgeLength())
+                {
+                    releaseMouseCapture(hWnd);
+                    InvalidateRect(hWnd, nullptr, FALSE);
+                }
+                return 0;
+            }
             case IDM_DELETE_VERTEX:
             {
                 auto* state = getAppState(hWnd);

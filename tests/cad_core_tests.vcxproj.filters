@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <Filter Include="solver">
+      <UniqueIdentifier>{B8B63631-8776-4CAC-9607-4D4549B522D2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="constraints">
+      <UniqueIdentifier>{1F27E039-8F53-45C4-B4C2-118576696BEA}</UniqueIdentifier>
+    </Filter>
     <Filter Include="core">
       <UniqueIdentifier>{81F73991-5F7B-412D-ABCE-51264D3D2CCF}</UniqueIdentifier>
     </Filter>
@@ -13,6 +19,18 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TestsMain.cpp" />
+    <ClCompile Include="solver\DenseLinearAlgebraTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
+    <ClCompile Include="solver\ConstraintSolverTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
+    <ClCompile Include="solver\JacobianTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
+    <ClCompile Include="constraints\FixedLengthConstraintTests.cpp">
+      <Filter>constraints</Filter>
+    </ClCompile>
     <ClCompile Include="core\DocumentTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
@@ -34,6 +52,12 @@
     <ClCompile Include="editor\EditorSessionTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
+    <ClCompile Include="editor\LengthInputTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\editor\LengthInput.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\editor\HitTester.cpp">
       <Filter>editor</Filter>
     </ClCompile>
@@ -47,6 +71,9 @@
       <Filter>editor</Filter>
     </ClInclude>
     <ClInclude Include="..\src\editor\EditorSession.h">
+      <Filter>editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\editor\LengthInput.h">
       <Filter>editor</Filter>
     </ClInclude>
     <ClInclude Include="..\src\editor\DragState.h">

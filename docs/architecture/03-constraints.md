@@ -2,6 +2,8 @@
 
 [Spis treści](README.md)
 
+Bieżąca implementacja jest działającym prototypem długości: obejmuje walidację, skalowanie, tłumienie, dobór kroku, algebrę liniową i numeryczne [obliczanie Jacobiego](09-jacobian.md). Poniższy opis obejmuje także docelową równoległość, ciągłość i graf zależności. Prototyp przyjmuje skończone długości docelowe większe od zera, przekazuje relacje przez `span` i rozwiązuje wszystkie przekazane relacje; graf dotkniętej składowej nie jest jeszcze zaimplementowany.
+
 ## Jeden układ zależności
 
 Solver obejmuje długości i równoległość **wyłącznie odcinków**, a osobno równania ciągłości Bézierów oraz warunki dotyczące łuków. Krzywe i półokręgi nie otrzymują ograniczeń długości ani równoległości. Dodanie takiej relacji do krzywej jest odrzucane przez walidację.

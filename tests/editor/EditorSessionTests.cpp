@@ -3,6 +3,7 @@
 #include "../TestSupport.h"
 
 #include <array>
+#include <cmath>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -34,6 +35,32 @@ namespace
         EdgeId edge = session.document().findPolygon(polygon)->edges.front();
     };
 
+    Document constrainedScene()
+    {
+        Document document = scene();
+        const EdgeId edge = document.getPolygons().begin()->second.edges.front();
+        require(document.setFixedLength(edge, 20), "Could not prepare constrained scene");
+        return document;
+    }
+
+    struct ConstrainedFixture
+    {
+        EditorSession session{constrainedScene()};
+        PolygonId polygon = session.document().getPolygons().begin()->first;
+        VertexId vertex = session.document().findPolygon(polygon)->vertices[0];
+        VertexId neighbour = session.document().findPolygon(polygon)->vertices[1];
+        EdgeId edge = session.document().findPolygon(polygon)->edges[0];
+    };
+
+    void requireLengthsSatisfied(const Document& document)
+    {
+        for (const auto& relation : document.getFixedLengthConstraints())
+        {
+            const auto error = constraint::fixedLengthError(document, relation);
+            require(error && std::abs(*error) <= 1e-6, "Session accepted an unsatisfied length");
+        }
+    }
+
     void requirePosition(const Document& document, VertexId id, const Vec2& expected)
     {
         const Vertex* vertex = document.findVertex(id);
@@ -43,6 +70,12 @@ namespace
 
     void requireDocument(const Document& actual, const Document& expected, PolygonId translated = {}, Vec2 delta = {})
     {
+        const auto actualLengths = actual.getFixedLengthConstraints();
+        const auto expectedLengths = expected.getFixedLengthConstraints();
+        require(actualLengths.size() == expectedLengths.size(), "Constraint count changed");
+        for (std::size_t i = 0; i < actualLengths.size(); ++i)
+            require(actualLengths[i].edge == expectedLengths[i].edge && actualLengths[i].length == expectedLengths[i].length,
+                "Constraint changed during the operation");
         require(actual.getPolygons().size() == expected.getPolygons().size(), "Polygon count changed");
         for (const auto& [id, polygon] : expected.getPolygons())
         {
@@ -323,6 +356,177 @@ namespace
         requireDocument(f.session.document(), before);
     }
 
+    void constrainedDragKeepsCursorAndGrabOffset()
+    {
+        ConstrainedFixture f;
+        const Document before = f.session.document();
+        require(f.session.pointerDown({-2, 1}), "Constrained drag did not start");
+        require(f.session.pointerMove({3, 11}), "Constrained drag failed");
+        requirePosition(f.session.document(), f.vertex, {5, 10});
+        requireLengthsSatisfied(f.session.document());
+        require(f.session.document().findVertex(f.neighbour)->position.x != 20, "Neighbour did not adapt");
+        for (const auto& [id, polygon] : before.getPolygons())
+        {
+            (void)id;
+            for (const VertexId vertex : polygon.vertices)
+                if (vertex != f.vertex && vertex != f.neighbour)
+                    requirePosition(f.session.document(), vertex, before.findVertex(vertex)->position);
+        }
+        const Document accepted = f.session.document();
+        f.session.pointerUp();
+        require(!f.session.cancelInteraction(), "Committed constrained drag remained cancellable");
+        requireDocument(f.session.document(), accepted);
+    }
+
+    void constrainedDragContinuesFromLastPreview()
+    {
+        ConstrainedFixture f;
+        require(f.session.pointerDown({0, 0}) && f.session.pointerMove({5, 10}), "First constrained move failed");
+        const Vec2 previousNeighbour = f.session.document().findVertex(f.neighbour)->position;
+        const Vec2 target{6, 11};
+        const Vec2 direction = previousNeighbour - target;
+        const Vec2 expected = target + direction * (20 / std::hypot(direction.x, direction.y));
+        require(f.session.pointerMove(target), "Second constrained move failed");
+        requirePosition(f.session.document(), f.vertex, target);
+        const Vec2 actual = f.session.document().findVertex(f.neighbour)->position;
+        require(std::hypot(actual.x - expected.x, actual.y - expected.y) < 2e-6,
+            "Solver restarted from the gesture's initial geometry instead of its last preview");
+        requireLengthsSatisfied(f.session.document());
+    }
+
+    void rejectedConstrainedDragPreservesPreviewAndResumes()
+    {
+        ConstrainedFixture f;
+        require(f.session.pointerDown({0, 0}) && f.session.pointerMove({5, 10}), "Valid move failed");
+        const Document accepted = f.session.document();
+        const Vec2 coincident = accepted.findVertex(f.neighbour)->position;
+        require(!f.session.pointerMove(coincident), "Zero-length candidate was accepted");
+        require(f.session.isDragging() && f.session.selection().vertex == f.vertex, "Rejected move destroyed the gesture");
+        requireDocument(f.session.document(), accepted);
+        require(f.session.pointerMove({6, 11}), "Could not continue after solver rejection");
+        requireLengthsSatisfied(f.session.document());
+    }
+
+    void cancelAndEscapeRestoreConstrainedGesture()
+    {
+        for (const bool useEscape : {false, true})
+        {
+            ConstrainedFixture f;
+            const Document before = f.session.document();
+            require(f.session.pointerDown({0, 0}) && f.session.pointerMove({5, 10}) && f.session.pointerMove({6, 11}),
+                "Constrained gesture failed");
+            if (useEscape) f.session.escape();
+            else require(f.session.cancelInteraction(), "Cancellation failed");
+            require(!f.session.isDragging(), "Cancelled gesture remained active");
+            requireDocument(f.session.document(), before);
+        }
+    }
+
+    void releaseAfterRejectedMoveCommitsLastValidPreview()
+    {
+        ConstrainedFixture f;
+        require(f.session.pointerDown({0, 0}) && f.session.pointerMove({5, 10}), "Valid move failed");
+        const Document accepted = f.session.document();
+        require(!f.session.pointerMove(accepted.findVertex(f.neighbour)->position), "Invalid candidate was accepted");
+        f.session.pointerUp();
+        require(!f.session.isDragging() && !f.session.cancelInteraction(), "Release did not finish the gesture");
+        requireDocument(f.session.document(), accepted);
+    }
+
+    void polygonTranslationPreservesStoredLengths()
+    {
+        ConstrainedFixture f;
+        const Document before = f.session.document();
+        require(f.session.pointerDown({10, 10}) && f.session.pointerMove({30, 40}), "Constrained polygon move failed");
+        requireDocument(f.session.document(), before, f.polygon, {20, 30});
+        requireLengthsSatisfied(f.session.document());
+        require(f.session.cancelInteraction(), "Polygon cancellation failed");
+        requireDocument(f.session.document(), before);
+    }
+
+    void settingAndUpdatingSelectedLengthIsTransactional()
+    {
+        Fixture f;
+        require(f.session.selectAt({10, 0}), "Edge selection failed");
+        require(f.session.selectedEdgeLength() == 20 && !f.session.selectedFixedLength(), "Wrong initial dialog value");
+        require(f.session.setSelectedEdgeLength(30), "Setting length failed");
+        require(f.session.selectedFixedLength() == 30 && f.session.selection().edge == f.edge, "Constraint or selection lost");
+        requirePosition(f.session.document(), f.vertex, {0, 0});
+        requireLengthsSatisfied(f.session.document());
+        require(f.session.setSelectedEdgeLength(10), "Updating length failed");
+        require(f.session.document().getFixedLengthConstraints().size() == 1 && f.session.selectedFixedLength() == 10,
+            "Updating length created a duplicate");
+        require(std::abs(*f.session.selectedEdgeLength() - 10) <= 1e-6, "Actual geometry did not adapt");
+        requireLengthsSatisfied(f.session.document());
+    }
+
+    void rejectedLengthValuesPreserveExistingRelation()
+    {
+        ConstrainedFixture f;
+        require(f.session.selectAt({10, 0}), "Edge selection failed");
+        const Document before = f.session.document();
+        for (const double invalid : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()})
+        {
+            require(!f.session.setSelectedEdgeLength(invalid), "Invalid target accepted");
+            requireDocument(f.session.document(), before);
+            require(f.session.selection().edge == f.edge, "Rejected edit changed selection");
+        }
+    }
+
+    void unsolvedLengthEditPreservesGeometryAndRelations()
+    {
+        Document document;
+        const std::array positions{Vec2{0, 0}, Vec2{20, 0}, Vec2{0, 20}};
+        const auto* polygon = document.findPolygon(document.addPolygon(positions));
+        const EdgeId edge = polygon->edges[0];
+        const std::array lengths{20.0, std::sqrt(800.0), 20.0};
+        for (std::size_t i = 0; i < lengths.size(); ++i)
+            require(document.setFixedLength(polygon->edges[i], lengths[i]), "Fixture relation failed");
+        EditorSession session{document};
+        session.selectAt({10, 0});
+        require(!session.setSelectedEdgeLength(100), "Impossible triangle lengths were accepted");
+        requireDocument(session.document(), document);
+        require(session.selection().edge == edge && session.selectedFixedLength() == 20, "Rejected edit lost old relation");
+    }
+
+    void lengthCommandsRequireEdgeSelection()
+    {
+        Fixture f;
+        const Document before = f.session.document();
+        require(!f.session.selectedEdgeLength() && !f.session.selectedFixedLength() &&
+            !f.session.setSelectedEdgeLength(20) && !f.session.removeSelectedEdgeLength(), "Empty selection enabled lengths");
+        require(f.session.pointerDown({0, 0}), "Vertex gesture failed");
+        require(!f.session.setSelectedEdgeLength(20) && !f.session.removeSelectedEdgeLength() && f.session.isDragging(),
+            "Rejected command changed an unrelated gesture");
+        f.session.cancelInteraction();
+        f.session.selectAt({10, 10});
+        require(!f.session.selectedEdgeLength() && !f.session.setSelectedEdgeLength(20), "Polygon selection enabled lengths");
+        requireDocument(f.session.document(), before);
+    }
+
+    void removingSelectedLengthRestoresFreeDragging()
+    {
+        ConstrainedFixture f;
+        f.session.selectAt({10, 0});
+        Document expected = f.session.document();
+        require(expected.removeFixedLength(f.edge), "Fixture removal failed");
+        require(f.session.removeSelectedEdgeLength() && !f.session.selectedFixedLength(), "Removal command failed");
+        require(f.session.selection().edge == f.edge && !f.session.removeSelectedEdgeLength(), "Repeated removal succeeded");
+        requireDocument(f.session.document(), expected);
+        require(f.session.pointerDown({0, 0}) && f.session.pointerMove({5, 10}), "Free drag failed");
+        requirePosition(f.session.document(), f.neighbour, {20, 0});
+    }
+
+    void settingCurrentLengthPreservesGeometry()
+    {
+        Fixture f;
+        f.session.selectAt({10, 0});
+        Document expected = f.session.document();
+        require(expected.setFixedLength(f.edge, 20), "Fixture constraint failed");
+        require(f.session.setSelectedEdgeLength(*f.session.selectedEdgeLength()), "Default length was rejected");
+        requireDocument(f.session.document(), expected);
+    }
+
     void cancelledMotionPreservesCommittedTopology()
     {
         Fixture f;
@@ -361,7 +565,19 @@ namespace cad::tests
             TestCase{"valid motion resumes after rejected input", validMotionCanResumeAfterRejectedInput},
             TestCase{"each gesture has an independent snapshot", eachGestureHasIndependentSnapshot},
             TestCase{"failed command preserves cancellable gesture", failedCommandLeavesGestureCancellable},
-            TestCase{"cancelled motion preserves committed topology", cancelledMotionPreservesCommittedTopology}
+            TestCase{"cancelled motion preserves committed topology", cancelledMotionPreservesCommittedTopology},
+            TestCase{"constrained drag keeps cursor and grab offset", constrainedDragKeepsCursorAndGrabOffset},
+            TestCase{"constrained drag continues from last preview", constrainedDragContinuesFromLastPreview},
+            TestCase{"rejected constrained drag preserves preview and resumes", rejectedConstrainedDragPreservesPreviewAndResumes},
+            TestCase{"cancel and Escape restore constrained gesture", cancelAndEscapeRestoreConstrainedGesture},
+            TestCase{"release after solver rejection commits last valid preview", releaseAfterRejectedMoveCommitsLastValidPreview},
+            TestCase{"polygon translation preserves stored lengths", polygonTranslationPreservesStoredLengths},
+            TestCase{"setting and updating selected length is transactional", settingAndUpdatingSelectedLengthIsTransactional},
+            TestCase{"invalid lengths preserve existing relation", rejectedLengthValuesPreserveExistingRelation},
+            TestCase{"unsolved length edit preserves geometry and relations", unsolvedLengthEditPreservesGeometryAndRelations},
+            TestCase{"length commands require edge selection", lengthCommandsRequireEdgeSelection},
+            TestCase{"removing length restores free dragging", removingSelectedLengthRestoresFreeDragging},
+            TestCase{"setting the current length preserves geometry", settingCurrentLengthPreservesGeometry}
         };
         return tests;
     }

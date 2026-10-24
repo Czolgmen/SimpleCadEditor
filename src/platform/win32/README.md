@@ -7,6 +7,8 @@ src/platform/win32/
   BackBuffer.cpp
   GdiRenderer.h
   GdiRenderer.cpp
+  LengthDialog.h
+  LengthDialog.cpp
 ```
 
 Pliki należą do projektu aplikacji `Projecr1_GK`, a nie biblioteki `cad_core`. Filtry Visual Studio odzwierciedlają tę strukturę. Katalog `src` jest dodany do ścieżek nagłówków aplikacji i IntelliSense.
@@ -16,6 +18,7 @@ Pliki należą do projektu aplikacji `Projecr1_GK`, a nie biblioteki `cad_core`.
 - `GdiRenderer.h/.cpp`: `cad::win32::drawDocument` rysuje krawędzie i znaczniki wierzchołków oraz wyróżnia przekazane ID zaznaczonego wierzchołka, krawędzi lub wielokąta. `worldToScreen` przelicza współrzędne świata na ekran, ze skalą 1:1, marginesem i odwróconą osią Y.
 - `AppState.h`: posiada przenośną [`EditorSession`](../../editor/README.md) oraz bufor obrazu. Sesja posiada dokument, zaznaczenie i stan gestu. Stan aplikacji powstaje raz w `wWinMain`, a wskaźnik jest przekazywany do okna przez `WM_NCCREATE` i przechowywany w `GWLP_USERDATA`.
 - `BackBuffer.h/.cpp`: posiada pamięciowy DC i odgórny, 32-bitowy `DIBSection`. Automatycznie przywraca poprzednią bitmapę DC i zwalnia swoje zasoby. Kopiowanie i przenoszenie tego właściciela uchwytów są wyłączone.
+- `LengthDialog.h/.cpp`: modalny dialog długości z zasobu `IDD_FIXED_LENGTH`. Wyświetla aktualną długość, obsługuje OK, Anuluj i zamknięcie okna, a tekst przekazuje do przenośnego `editor::parsePositiveLength`.
 
 Przykład dołączania nagłówka z kodu aplikacji:
 
@@ -40,6 +43,14 @@ Polecenie wywołuje `EditorSession::splitSelectedEdge`, która korzysta z `Docum
 Zaznaczony wierzchołek można usunąć klawiszem Delete albo poleceniem „Usuń wierzchołek” w menu PPM. Polecenie jest aktywne dla wierzchołka figury mającej więcej niż trzy punkty. Delete przy innym zaznaczeniu lub na trójkącie nie zmienia dokumentu; pozycja menu jest wtedy nieaktywna.
 
 Adapter wywołuje `EditorSession::deleteSelectedVertex`. Sesja korzysta z `Document::deleteVertex`, które usuwa punkt i obie dochodzące krawędzie, łączy sąsiadów nowym odcinkiem i zachowuje kolejność pozostałych elementów. Po sukcesie sesja czyści zaznaczenie i kończy gest, a adapter zwalnia przechwycenie myszy i zleca przerysowanie.
+
+## Stała długość krawędzi
+
+PPM na krawędzi otwiera polecenie „Ustaw stałą długość...”. Dla krawędzi z relacją jest to „Zmień stałą długość...”; dostępne jest też „Usuń ograniczenie długości”. Polecenia pozostają nieaktywne dla innych zaznaczeń. Shift+F10 działa dla bieżącego zaznaczenia krawędzi.
+
+Dialog domyślnie podaje aktualną długość geometryczną krawędzi. Akceptuje dodatnie liczby skończone, kropkę albo przecinek dziesiętny i zapis wykładniczy. Niepoprawny tekst pozostawia okno otwarte z komunikatem, a Anuluj, Esc i zamknięcie okna nie zmieniają modelu. Pierwszy koniec krawędzi pozostaje w miejscu, a pozostałe punkty dopasowuje solver. Brak zbieżności pozostawia dokument bez zmian i wyświetla komunikat.
+
+Aktywną relację oznacza zielona etykieta `L=...` przy środku krawędzi. Renderer przywraca poprzednią czcionkę, kolor tekstu i tryb tła DC. Usunięcie relacji usuwa etykietę i pozostawia geometrię; podział krawędzi lub usunięcie wierzchołka czyści relacje zmienionych krawędzi. Przeciąganie końca odcinka uruchamia solver, zachowując prowadzony punkt pod kursorem. Przy odrzuconym ruchu pozostaje ostatni poprawny podgląd.
 
 ## Przebieg odmalowania
 

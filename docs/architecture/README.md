@@ -1,6 +1,6 @@
 # Architektura edytora wielokątów
 
-Status: plan realizowany etapami. Działają model i walidacja, scena demonstracyjna, renderer GDI z buforem oraz wybór, przeciąganie, podział i usuwanie elementów. Przenośna [`EditorSession`](../../src/editor/README.md) obsługuje edycję i anulowanie gestów. Solver, krzywe i własna rasteryzacja pozostają kolejnymi etapami.
+Status: plan realizowany etapami. Działają model i walidacja, scena demonstracyjna, renderer GDI z buforem oraz wybór, przeciąganie, podział i usuwanie elementów. Przenośna [`EditorSession`](../../src/editor/README.md) obsługuje edycję i anulowanie gestów. Prototyp solvera długości z numerycznym [obliczaniem Jacobiego](09-jacobian.md) działa podczas przeciągania wierzchołka. Menu PPM i dialog umożliwiają dodawanie, zmianę i usuwanie stałej długości; aktywne relacje mają etykiety przy krawędziach. Równoległość, krzywe i własna rasteryzacja pozostają kolejnymi etapami.
 
 Podstawa: [treść zadania](../instuction.md). Wybrany wariant **A–K**: relacja równoległości dwóch krawędzi i domyślna ciągłość **G1** po włączeniu segmentu Béziera. Użytkownik nadal może jawnie wybrać G0, G1 lub C1 w miejscach dopuszczonych przez zadanie.
 
@@ -16,6 +16,7 @@ Stack: **C++20 + WinAPI + GDI**, z rdzeniem geometrii i mechanizmem edycji nieza
 6. [Rysowanie i GDI](06-rendering.md) — rasteryzacja, wymagane algorytmy i adapter Windows.
 7. [Układ projektu i wdrożenie](07-implementation.md) — pliki, etapy i weryfikacja.
 8. [Założenia i pokrycie wymagań](08-requirements.md) — interpretacje niejednoznaczności oraz mapa funkcjonalności.
+9. [Macierz Jacobiego](09-jacobian.md) — kontrakt, różnice skończone i przykład pochodnych w prototypie solvera.
 
 ## Decyzje przewodnie
 

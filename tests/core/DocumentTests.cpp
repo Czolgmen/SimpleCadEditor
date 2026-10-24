@@ -529,6 +529,81 @@ namespace
         require(document.validate().empty(), "Rejected move damaged the original model");
     }
 
+    void removesOnlyFixedLengthAndAllowsReadding()
+    {
+        Document document;
+        const auto positions = triangle();
+        const PolygonId polygonId = document.addPolygon(positions);
+        const EdgeId edgeId = document.findPolygon(polygonId)->edges.front();
+        require(document.setFixedLength(edgeId, 7.5), "Fixture constraint was rejected");
+
+        require(document.removeFixedLength(edgeId), "Existing constraint was not removed");
+        require(document.getFixedLengthConstraints().empty(), "Removed constraint remains in storage");
+        checkPolygon(document, polygonId, positions);
+        require(document.validate().empty(), "Removing a constraint damaged the geometry");
+        require(!document.removeFixedLength(edgeId), "Repeated removal should return false");
+        require(document.setFixedLength(edgeId, 12), "Could not constrain the edge again");
+        const auto constraints = document.getFixedLengthConstraints();
+        require(constraints.size() == 1 && constraints[0].edge == edgeId && constraints[0].length == 12,
+            "Readded constraint has wrong data");
+    }
+
+    void removesFirstMiddleAndLastFixedLengthPreservingOthers()
+    {
+        for (const std::size_t removedIndex : {std::size_t{0}, std::size_t{2}, std::size_t{5}})
+        {
+            Document document;
+            const auto positions = triangle();
+            const PolygonId firstId = document.addPolygon(positions);
+            const PolygonId secondId = document.addPolygon(positions);
+            std::array<EdgeId, 6> edgeIds;
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                edgeIds[i] = document.findPolygon(firstId)->edges[i];
+                edgeIds[i + 3] = document.findPolygon(secondId)->edges[i];
+            }
+            for (std::size_t i = 0; i < edgeIds.size(); ++i)
+                require(document.setFixedLength(edgeIds[i], 10 + static_cast<double>(i)), "Fixture constraint rejected");
+
+            require(document.removeFixedLength(edgeIds[removedIndex]), "Constraint removal failed");
+            const auto constraints = document.getFixedLengthConstraints();
+            require(constraints.size() == edgeIds.size() - 1, "Removal changed the wrong number of constraints");
+            std::size_t remainingIndex = 0;
+            for (std::size_t i = 0; i < edgeIds.size(); ++i)
+            {
+                if (i == removedIndex)
+                    continue;
+                require(constraints[remainingIndex].edge == edgeIds[i] &&
+                    constraints[remainingIndex].length == 10 + static_cast<double>(i),
+                    "Removal changed another constraint or its order");
+                ++remainingIndex;
+            }
+            checkPolygon(document, firstId, positions);
+            checkPolygon(document, secondId, positions);
+        }
+    }
+
+    void absentFixedLengthRemovalPreservesStorage()
+    {
+        Document document;
+        require(!document.removeFixedLength(EdgeId{}), "Empty document accepted removal");
+        require(!document.removeFixedLength(EdgeId{999999}), "Unknown edge accepted in empty document");
+        const auto positions = triangle();
+        const PolygonId polygonId = document.addPolygon(positions);
+        const auto* polygon = document.findPolygon(polygonId);
+        const EdgeId constrained = polygon->edges[0];
+        const EdgeId unconstrained = polygon->edges[1];
+        require(document.setFixedLength(constrained, 7), "Fixture constraint rejected");
+        for (const EdgeId missing : {EdgeId{}, EdgeId{999999}, unconstrained})
+        {
+            require(!document.removeFixedLength(missing), "Absent constraint removal succeeded");
+            const auto constraints = document.getFixedLengthConstraints();
+            require(constraints.size() == 1 && constraints[0].edge == constrained && constraints[0].length == 7,
+                "Failed removal changed existing constraint");
+            checkPolygon(document, polygonId, positions);
+        }
+    }
+
     void demoSceneIsValidAndTraversable()
     {
         const Document scene = createDemoScene();
@@ -607,7 +682,10 @@ namespace cad::tests
             TestCase{"last vertex overflow causes no partial polygon move", polygonOverflowDoesNotPartiallyMoveVertices},
             TestCase{"missing last vertex causes no partial polygon move", missingPolygonVertexDoesNotPartiallyMoveVertices},
             TestCase{"demo scene is valid and traversable", demoSceneIsValidAndTraversable},
-            TestCase{"demo scenes own independent documents", demoScenesAreIndependent}
+            TestCase{"demo scenes own independent documents", demoScenesAreIndependent},
+            TestCase{"fixed length removal preserves geometry and permits readding", removesOnlyFixedLengthAndAllowsReadding},
+            TestCase{"first, middle and last fixed length removal preserves other polygons' constraints", removesFirstMiddleAndLastFixedLengthPreservingOthers},
+            TestCase{"absent fixed length removal preserves storage", absentFixedLengthRemovalPreservesStorage}
         };
         return tests;
     }
