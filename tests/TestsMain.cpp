@@ -20,7 +20,8 @@ int main()
         TestSuite{"Vec2", cad::tests::vec2Tests()},
         TestSuite{"Validation", cad::tests::validationTests()},
         TestSuite{"HitTester", cad::tests::hitTesterTests()},
-        TestSuite{"SplitEdge", cad::tests::splitEdgeTests()}
+        TestSuite{"SplitEdge", cad::tests::splitEdgeTests()},
+        TestSuite{"DeleteVertex", cad::tests::deleteVertexTests()}
     };
 
     std::size_t total = 0;

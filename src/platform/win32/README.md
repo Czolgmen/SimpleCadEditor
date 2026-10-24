@@ -29,6 +29,12 @@ Kliknięcie PPM w obszarze rysowania wskazuje element w kolejności: wierzchołe
 
 Polecenie wywołuje `Document::splitEdge`. Po sukcesie czyści stan gestu, zaznacza nowy wierzchołek i zleca przerysowanie. Podział następuje w połowie boku, niezależnie od miejsca kliknięcia na nim. Utworzone menu jest zwalniane przez `DestroyMenu` po jego zamknięciu.
 
+## Usuwanie wierzchołka
+
+Zaznaczony wierzchołek można usunąć klawiszem Delete albo poleceniem „Usuń wierzchołek” w menu PPM. Polecenie jest aktywne dla wierzchołka figury mającej więcej niż trzy punkty. Delete przy innym zaznaczeniu lub na trójkącie nie zmienia dokumentu; pozycja menu jest wtedy nieaktywna.
+
+`Document::deleteVertex` usuwa punkt i obie dochodzące krawędzie, łączy sąsiadów nowym odcinkiem i zachowuje kolejność pozostałych elementów. Po sukcesie aplikacja zwalnia przechwycenie myszy, czyści zaznaczenie oraz gest i zleca przerysowanie.
+
 ## Przebieg odmalowania
 
 Punkt wejścia i procedura okna są w `Projecr1_GK.cpp`. `WM_PAINT`, pomiędzy `BeginPaint` i `EndPaint`:

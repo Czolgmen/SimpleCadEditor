@@ -10,6 +10,7 @@
 #include <editor/HitTester.h>
 
 #include <windowsx.h>
+#include <algorithm>
 
 
 #define MAX_LOADSTRING 100
@@ -24,6 +25,22 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int, cad::win32::AppState&);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+
+namespace
+{
+    bool canDeleteSelectedVertex(const cad::win32::AppState& state)
+    {
+        if (!state.selection.vertex || !state.document.findVertex(*state.selection.vertex))
+            return false;
+        for (const auto& [id, polygon] : state.document.getPolygons())
+        {
+            if (std::find(polygon.vertices.begin(), polygon.vertices.end(), *state.selection.vertex) !=
+                polygon.vertices.end())
+                return polygon.vertices.size() > 3;
+        }
+        return false;
+    }
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -250,6 +267,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         return 0;
     }
+    case WM_KEYDOWN:
+        if (wParam == VK_DELETE)
+        {
+            SendMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDM_DELETE_VERTEX, 0), 0);
+            return 0;
+        }
+        return DefWindowProcW(hWnd, message, wParam, lParam);
     case WM_CONTEXTMENU:
     {
         auto* state = reinterpret_cast<cad::win32::AppState*>(
@@ -303,7 +327,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const bool canSplit = state->selection.edge &&
             state->document.findEdge(*state->selection.edge);
         const UINT flags = MF_STRING | (canSplit ? MF_ENABLED : MF_GRAYED);
-        if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź"))
+        const UINT deleteFlags = MF_STRING | (canDeleteSelectedVertex(*state) ? MF_ENABLED : MF_GRAYED);
+        if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
+            !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete"))
         {
             DestroyMenu(menu);
             return 0;
@@ -323,6 +349,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
+            case IDM_DELETE_VERTEX:
+            {
+                auto* state = reinterpret_cast<cad::win32::AppState*>(
+                    GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+                if (!state || !canDeleteSelectedVertex(*state))
+                    return 0;
+
+                if (!state->document.deleteVertex(*state->selection.vertex))
+                {
+                    MessageBoxW(hWnd, L"Nie udało się usunąć wybranego wierzchołka.",
+                        L"Usuwanie wierzchołka", MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+
+                state->drag = {};
+                if (GetCapture() == hWnd)
+                    ReleaseCapture();
+                state->selection = {};
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             case IDM_SPLIT_EDGE:
             {
                 auto* state = reinterpret_cast<cad::win32::AppState*>(

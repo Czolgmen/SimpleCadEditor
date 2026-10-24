@@ -83,6 +83,7 @@
   <ItemGroup>
     <ClCompile Include="TestsMain.cpp" />
     <ClCompile Include="core\DocumentTests.cpp" />
+    <ClCompile Include="core\DeleteVertexTests.cpp" />
     <ClCompile Include="core\SplitEdgeTests.cpp" />
     <ClCompile Include="core\ValidationTests.cpp" />
     <ClCompile Include="geometry\Vec2Tests.cpp" />

@@ -40,6 +40,8 @@ namespace cad
         bool movePolygon(PolygonId id, const Vec2& delta);
         // Keeps the original edge ID for start -> midpoint; returns the new vertex ID.
         std::optional<VertexId> splitEdge(EdgeId id);
+        // Replaces both incident edges with a new segment; triangles cannot lose vertices.
+        bool deleteVertex(VertexId id);
     };
 
 }

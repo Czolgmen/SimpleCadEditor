@@ -16,6 +16,9 @@
     <ClCompile Include="core\DocumentTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\DeleteVertexTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\SplitEdgeTests.cpp">
       <Filter>core</Filter>
     </ClCompile>

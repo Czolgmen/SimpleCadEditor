@@ -255,4 +255,69 @@ namespace cad {
         ++nextEdgeId;
         return newVertexId;
     }
+
+    bool Document::deleteVertex(VertexId id)
+    {
+        const auto vertexIt = vertices.find(id);
+        if (vertexIt == vertices.end())
+            return false;
+
+        Polygon* owner = nullptr;
+        std::size_t vertexIndex = 0;
+        for (auto& [polygonId, polygon] : polygons)
+        {
+            const auto position = std::find(polygon.vertices.begin(), polygon.vertices.end(), id);
+            if (position == polygon.vertices.end())
+                continue;
+
+            if (owner || std::count(polygon.vertices.begin(), polygon.vertices.end(), id) != 1)
+                return false;
+            owner = &polygon;
+            vertexIndex = static_cast<std::size_t>(std::distance(polygon.vertices.begin(), position));
+        }
+
+        if (!owner || owner->vertices.size() <= 3 || owner->edges.size() != owner->vertices.size())
+            return false;
+
+        const std::size_t count = owner->vertices.size();
+        const std::size_t previousIndex = vertexIndex == 0 ? count - 1 : vertexIndex - 1;
+        const std::size_t nextIndex = (vertexIndex + 1) % count;
+        const VertexId previousId = owner->vertices[previousIndex];
+        const VertexId nextId = owner->vertices[nextIndex];
+        const auto previousIt = vertices.find(previousId);
+        const auto nextIt = vertices.find(nextId);
+        const auto incomingIt = edges.find(owner->edges[previousIndex]);
+        const auto outgoingIt = edges.find(owner->edges[vertexIndex]);
+        if (previousIt == vertices.end() || nextIt == vertices.end() ||
+            incomingIt == edges.end() || outgoingIt == edges.end() || incomingIt == outgoingIt)
+            return false;
+
+        if (incomingIt->second.start != previousId || incomingIt->second.end != id ||
+            outgoingIt->second.start != id || outgoingIt->second.end != nextId)
+            return false;
+
+        for (const Vec2& position : {vertexIt->second.position, previousIt->second.position, nextIt->second.position})
+        {
+            if (!std::isfinite(position.x) || !std::isfinite(position.y))
+                return false;
+        }
+
+        const EdgeId newEdgeId{nextEdgeId};
+        auto updatedVertices = owner->vertices;
+        auto updatedEdges = owner->edges;
+        const auto offset = static_cast<std::ptrdiff_t>(vertexIndex);
+        updatedVertices.erase(updatedVertices.begin() + offset);
+        updatedEdges[previousIndex] = newEdgeId;
+        updatedEdges.erase(updatedEdges.begin() + offset);
+
+        // The only map allocation happens before removing any stored entity.
+        edges.emplace(newEdgeId, Edge{newEdgeId, previousId, nextId});
+        owner->vertices.swap(updatedVertices);
+        owner->edges.swap(updatedEdges);
+        edges.erase(incomingIt);
+        edges.erase(outgoingIt);
+        vertices.erase(vertexIt);
+        ++nextEdgeId;
+        return true;
+    }
 }

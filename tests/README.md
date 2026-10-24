@@ -96,4 +96,14 @@ Testy hit testingu używają skończonych współrzędnych i tolerancji. Testy w
 
 Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co walidator. Testy nie symulują błędów alokacji pamięci.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia pięć zestawów i podaje wspólny wynik **119 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[DeleteVertexTests.cpp](core/DeleteVertexTests.cpp) zawiera 11 przypadków obejmujących:
+
+- Usuwanie każdego wierzchołka czworokąta, w tym pierwszego i ostatniego, z zachowaniem cyklu, pozycji pozostałych punktów i niezależności innych wielokątów.
+- Usunięcie punktu oraz obu dochodzących krawędzi z magazynów, utworzenie nowego odcinka między sąsiadami i zużycie wyłącznie jednego nowego ID krawędzi.
+- Powtarzane usuwanie do trójkąta, ochronę każdego punktu trójkąta, nieistniejące i już usunięte ID oraz usunięcie punktu dodanego przez `splitEdge`.
+- Brak zmian i zużycia ID po odrzuceniu brakujących sąsiadów, krawędzi, niepoprawnych połączeń, niespójnych list i niejednoznacznej własności.
+- Odrzucanie NaN i obu nieskończoności w każdej współrzędnej usuwanego punktu i jego sąsiadów oraz poprawną obsługę zbieżnych pozycji.
+
+Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu źródłowego, który jest nieconst. Testy nie symulują błędów alokacji pamięci.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia sześć zestawów i podaje wspólny wynik **130 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
