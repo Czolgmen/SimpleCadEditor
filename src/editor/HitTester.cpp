@@ -2,6 +2,8 @@
 
 #include <cad_core/model/Document.h>
 
+#include <algorithm>
+
 namespace cad::editor
 {
     std::optional<VertexId> hitTestVertex(
@@ -86,4 +88,63 @@ namespace cad::editor
 
         return std::nullopt;
     }
+
+    double pointSegmentDistanceSquared(
+        const Vec2& point,
+        const Vec2& start,
+        const Vec2& end)
+    {
+        const Vec2 direction = end - start;
+        const Vec2 offset = point - start;
+        const double lengthSquared = dot(direction, direction);
+
+        if (lengthSquared == 0.0)
+            return dot(offset, offset);
+
+        const double t = std::clamp(
+            dot(offset, direction) / lengthSquared, 0.0, 1.0);
+
+        const Vec2 closest = start + direction * t;
+        const Vec2 difference = point - closest;
+        return dot(difference, difference);
+    }
+
+    std::optional<EdgeId> hitTestEdge(const Document &document, const Vec2 &worldPosition, double tolerance)
+    {
+        if (tolerance < 0)
+            return std::nullopt;
+    
+        std::optional<EdgeId> nearest;
+        double bestDistanceSquared = tolerance * tolerance;
+
+        for (const auto& [polygonId, polygon] : document.getPolygons())
+        {
+            for (const auto& edgeId : polygon.edges)
+            {
+                const auto* edge = document.findEdge(edgeId);
+
+                if (!edge)
+                    continue;
+
+                const auto* start = document.findVertex(edge->start);
+                const auto* end = document.findVertex(edge->end);
+
+                if (!start || !end)
+                    continue;
+
+                const double distanceSquared = pointSegmentDistanceSquared(
+                            worldPosition, start->position, end->position);
+
+                if (distanceSquared <= tolerance * tolerance && (!nearest || distanceSquared < bestDistanceSquared))
+                {
+                    nearest = edgeId;
+                    bestDistanceSquared = distanceSquared;
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+
 }

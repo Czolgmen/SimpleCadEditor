@@ -68,7 +68,7 @@ Wyniki obliczeń zmiennoprzecinkowych porównujemy z tolerancją bezwzględną `
 
 Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture walidatora celowo modyfikuje encje przez `const_cast` wskaźników zwróconych z metod `find...`. Obiekt źródłowy jest nieconst, więc takie usunięcie kwalifikatora jest dozwolone; mechanizm pozostaje wyłącznie w testach. Tę samą technikę wykorzystują przypadki brakujących odwołań w testach przesuwania i hit testingu.
 
-[HitTesterTests.cpp](editor/HitTesterTests.cpp) zawiera 27 przypadków obejmujących:
+[HitTesterTests.cpp](editor/HitTesterTests.cpp) zawiera 42 przypadki obejmujące:
 
 - Pusty dokument, dokładne trafienie przy zerowej tolerancji i brak trafienia poza tolerancją.
 - Wybór najbliższego wierzchołka niezależnie od kolejności kandydatów, także z różnych wielokątów.
@@ -79,7 +79,11 @@ Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture wali
 - Regułę parzystości, także dla konturu obiegającego ten sam kwadrat dwukrotnie, oraz udział krawędzi zamykającej figurę.
 - Wybór ostatniego rysowanego trafionego wielokąta przy nakładaniu oraz dostępność wszystkich figur rozłącznych.
 - Ujemne i ułamkowe współrzędne, trafienia po `movePolygon` oraz odrzucanie figury z brakującą krawędzią lub jej końcem.
+- `hitTestEdge`: pusty dokument, trafienia w każdy bok i jego końce, zerową i ujemną tolerancję, akceptowanie granicy tolerancji i odrzucanie punktów poza nią.
+- Wybór najbliższej krawędzi niezależnie od kolejności i wielokąta oraz zachowanie pierwszego kandydata przy remisie i pokrywających się bokach.
+- Rzut ograniczony do obu końców odcinka, ukośne odcinki w obu kierunkach, ujemne i ułamkowe współrzędne oraz krawędź zerowej długości. Przypadki te sprawdzają również pomocnicze `pointSegmentDistanceSquared` przez publiczne API hit testingu.
+- Trafienia po przesunięciu końców i całego wielokąta oraz pomijanie brakujących krawędzi i ich końców bez przerywania wyszukiwania pozostałych boków.
 
 Testy hit testingu używają skończonych współrzędnych i tolerancji. Testy wielokątów sprawdzają punkty poza samym brzegiem; zasada zaznaczania punktów dokładnie na krawędzi lub w wierzchołku pozostaje do ustalenia. Nie testują komunikatów Windows, przechwytywania myszy ani rysowania zaznaczenia.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia cztery zestawy i podaje wspólny wynik **95 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[TestsMain.cpp](TestsMain.cpp) uruchamia cztery zestawy i podaje wspólny wynik **110 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

@@ -12,6 +12,7 @@ namespace
     using namespace cad;
     using cad::editor::hitTestVertex;
     using cad::editor::hitTestPolygon;
+    using cad::editor::hitTestEdge;
     using cad::tests::require;
 
     struct Fixture
@@ -146,6 +147,20 @@ namespace
     {
         return {Vec2{0, 0}, Vec2{10, 0}, Vec2{10, 10}, Vec2{0, 10}};
     }
+
+    struct EdgeFixture
+    {
+        Document document;
+        PolygonId polygonId;
+        std::array<EdgeId, 4> edges;
+
+        EdgeFixture()
+        {
+            polygonId = document.addPolygon(square());
+            const auto& ids = document.findPolygon(polygonId)->edges;
+            edges = {ids.at(0), ids.at(1), ids.at(2), ids.at(3)};
+        }
+    };
 
     void emptyDocumentHasNoPolygonHit()
     {
@@ -305,6 +320,174 @@ namespace
                 "A polygon with a missing edge endpoint must not be hit");
         }
     }
+    void emptyDocumentHasNoEdgeHit()
+    {
+        const Document document;
+        require(!hitTestEdge(document, Vec2{}, 6), "Empty document produced an edge hit");
+    }
+
+    void zeroToleranceAcceptsPointsOnEveryEdge()
+    {
+        const EdgeFixture fixture;
+        const std::array midpoints{Vec2{5, 0}, Vec2{10, 5}, Vec2{5, 10}, Vec2{0, 5}};
+        for (std::size_t i = 0; i < midpoints.size(); ++i)
+            require(hitTestEdge(fixture.document, midpoints[i], 0) == fixture.edges[i],
+                "Zero tolerance must accept a point on an edge, including the closing edge");
+        require(hitTestEdge(fixture.document, Vec2{}, 0) == fixture.edges[0],
+            "Zero tolerance must accept an endpoint and preserve the first candidate");
+    }
+
+    void zeroToleranceRejectsPointOffEdge()
+    {
+        const EdgeFixture fixture;
+        require(!hitTestEdge(fixture.document, Vec2{5, -0.25}, 0),
+            "Zero tolerance accepted a point off every edge");
+    }
+
+    void negativeToleranceRejectsExactEdgeHit()
+    {
+        const EdgeFixture fixture;
+        require(!hitTestEdge(fixture.document, Vec2{5, 0}, -6),
+            "Negative tolerance must reject even an exact edge hit");
+    }
+
+    void edgeToleranceIncludesExactBoundary()
+    {
+        const EdgeFixture fixture;
+        require(hitTestEdge(fixture.document, Vec2{5, -4}, 4) == fixture.edges[0],
+            "Distance exactly equal to tolerance must be accepted using squared units");
+        require(!hitTestEdge(fixture.document, Vec2{5, -4.25}, 4),
+            "An edge just outside tolerance must not be hit");
+    }
+
+    void closerLaterEdgeReplacesEarlierCandidate()
+    {
+        const EdgeFixture fixture;
+        require(hitTestEdge(fixture.document, Vec2{5, 9}, 10) == fixture.edges[2],
+            "A closer later edge must replace the first candidate");
+    }
+
+    void fartherLaterEdgeDoesNotReplaceNearest()
+    {
+        const EdgeFixture fixture;
+        require(hitTestEdge(fixture.document, Vec2{5, 1}, 10) == fixture.edges[0],
+            "A farther later edge must not replace the nearest candidate");
+    }
+
+    void nearestEdgeIsSelectedAcrossPolygons()
+    {
+        EdgeFixture fixture;
+        const std::array positions{Vec2{0, 20}, Vec2{10, 20}, Vec2{10, 30}, Vec2{0, 30}};
+        const PolygonId otherId = fixture.document.addPolygon(positions);
+        const EdgeId otherBottom = fixture.document.findPolygon(otherId)->edges.front();
+        require(hitTestEdge(fixture.document, Vec2{5, 18}, 10) == otherBottom,
+            "A closer edge in a later polygon must win");
+        require(hitTestEdge(fixture.document, Vec2{5, 12}, 10) == fixture.edges[2],
+            "A closer edge in an earlier polygon must remain selected");
+    }
+
+    void equalEdgeDistancesKeepFirstCandidate()
+    {
+        EdgeFixture fixture;
+        require(hitTestEdge(fixture.document, Vec2{5, 5}, 5) == fixture.edges[0],
+            "Equidistant edges must preserve the first encountered candidate");
+        fixture.document.addPolygon(square());
+        require(hitTestEdge(fixture.document, Vec2{5, 0}, 0) == fixture.edges[0],
+            "Coincident edges from different polygons must preserve the first candidate");
+    }
+
+    void edgeProjectionIsClampedToBothEndpoints()
+    {
+        Document document;
+        const std::array positions{Vec2{10, 0}, Vec2{20, 0}, Vec2{15, 30}};
+        const PolygonId id = document.addPolygon(positions);
+        const EdgeId bottom = document.findPolygon(id)->edges.front();
+        // Infinite-line distance is 4; the nearest endpoint is 5 units away.
+        for (const Vec2 point : {Vec2{7, -4}, Vec2{23, -4}})
+        {
+            require(!hitTestEdge(document, point, 4.5),
+                "Projection outside the segment must use the endpoint distance");
+            require(hitTestEdge(document, point, 5) == bottom,
+                "The nearest endpoint must be accepted on the tolerance boundary");
+        }
+    }
+
+    void diagonalEdgesSupportFractionalCoordinatesAndBothDirections()
+    {
+        std::array positions{Vec2{-3.5, -2.5}, Vec2{6.5, 7.5}, Vec2{-30, 30}};
+        for (int orientation = 0; orientation < 2; ++orientation)
+        {
+            Document document;
+            const PolygonId id = document.addPolygon(positions);
+            const EdgeId diagonal = document.findPolygon(id)->edges.at(orientation == 0 ? 0 : 1);
+            // Squared distance to the diagonal is 2, so 1.25 misses and 1.5 hits.
+            require(!hitTestEdge(document, Vec2{-1.5, -2.5}, 1.25),
+                "Diagonal edge outside tolerance must be rejected");
+            require(hitTestEdge(document, Vec2{-1.5, -2.5}, 1.5) == diagonal,
+                "Diagonal hit must support fractional coordinates and reversed endpoints");
+            std::reverse(positions.begin(), positions.end());
+        }
+    }
+
+    void zeroLengthEdgeIsTreatedAsPoint()
+    {
+        Document document;
+        const std::array positions{Vec2{2, 3}, Vec2{2, 3}, Vec2{20, 30}};
+        const PolygonId id = document.addPolygon(positions);
+        const EdgeId collapsed = document.findPolygon(id)->edges.front();
+        require(hitTestEdge(document, Vec2{2, 3}, 0) == collapsed,
+            "Collapsed edge must support an exact hit without division by zero");
+        require(hitTestEdge(document, Vec2{-1, -1}, 5) == collapsed,
+            "Collapsed edge must use distance to its only point");
+        require(!hitTestEdge(document, Vec2{-1, -1}, 4.5),
+            "Collapsed edge outside tolerance must be rejected");
+    }
+
+    void edgeHitsFollowVertexAndPolygonMoves()
+    {
+        EdgeFixture fixture;
+        const auto vertices = fixture.document.findPolygon(fixture.polygonId)->vertices;
+        require(fixture.document.moveVertex(vertices[0], Vec2{0, -10}), "First fixture vertex move failed");
+        require(fixture.document.moveVertex(vertices[1], Vec2{10, -10}), "Second fixture vertex move failed");
+        require(!hitTestEdge(fixture.document, Vec2{5, 0}, 0.5),
+            "Old edge position must stop producing hits after moving its endpoints");
+        require(hitTestEdge(fixture.document, Vec2{5, -10}, 0) == fixture.edges[0],
+            "Edge must be found at its new endpoint positions");
+        require(fixture.document.movePolygon(fixture.polygonId, Vec2{100, 0}), "Fixture polygon move failed");
+        require(!hitTestEdge(fixture.document, Vec2{5, -10}, 0.5),
+            "Old edge position must stop producing hits after moving the polygon");
+        require(hitTestEdge(fixture.document, Vec2{105, -10}, 0) == fixture.edges[0],
+            "Edge must follow a whole polygon move without changing its ID");
+    }
+
+    void edgeHitSkipsMissingEdgeReference()
+    {
+        EdgeFixture fixture;
+        // Test-only corruption of an originally non-const document.
+        auto* polygon = const_cast<Polygon*>(fixture.document.findPolygon(fixture.polygonId));
+        polygon->edges[0] = EdgeId{std::numeric_limits<std::uint64_t>::max()};
+        require(!hitTestEdge(fixture.document, Vec2{5, 0}, 0), "Missing edge must be skipped");
+        require(hitTestEdge(fixture.document, Vec2{10, 5}, 0) == fixture.edges[1],
+            "A missing edge must not prevent finding another valid edge");
+    }
+
+    void edgeHitSkipsMissingStartOrEnd()
+    {
+        for (const bool missingStart : {true, false})
+        {
+            EdgeFixture fixture;
+            auto* edge = const_cast<Edge*>(fixture.document.findEdge(fixture.edges[0]));
+            const VertexId missing{std::numeric_limits<std::uint64_t>::max()};
+            if (missingStart)
+                edge->start = missing;
+            else
+                edge->end = missing;
+            require(!hitTestEdge(fixture.document, Vec2{5, 0}, 0),
+                "Edge with a missing endpoint must be skipped");
+            require(hitTestEdge(fixture.document, Vec2{10, 5}, 0) == fixture.edges[1],
+                "A missing endpoint must not prevent finding another valid edge");
+        }
+    }
 }
 
 namespace cad::tests
@@ -338,7 +521,22 @@ namespace cad::tests
             TestCase{"polygon hits at negative fractional coordinates", polygonHitsSupportNegativeFractionalCoordinates},
             TestCase{"polygon hit follows whole polygon move", polygonHitFollowsWholePolygonMove},
             TestCase{"missing edge rejects polygon hit", missingEdgeRejectsPolygonHit},
-            TestCase{"missing start or end rejects polygon hit", missingEdgeEndpointRejectsPolygonHit}
+            TestCase{"missing start or end rejects polygon hit", missingEdgeEndpointRejectsPolygonHit},
+            TestCase{"empty document has no edge hit", emptyDocumentHasNoEdgeHit},
+            TestCase{"zero tolerance accepts every edge and endpoints", zeroToleranceAcceptsPointsOnEveryEdge},
+            TestCase{"zero tolerance rejects point off edge", zeroToleranceRejectsPointOffEdge},
+            TestCase{"negative tolerance rejects exact edge hit", negativeToleranceRejectsExactEdgeHit},
+            TestCase{"edge tolerance includes exact boundary", edgeToleranceIncludesExactBoundary},
+            TestCase{"closer later edge replaces earlier candidate", closerLaterEdgeReplacesEarlierCandidate},
+            TestCase{"farther later edge does not replace nearest", fartherLaterEdgeDoesNotReplaceNearest},
+            TestCase{"nearest edge across polygons", nearestEdgeIsSelectedAcrossPolygons},
+            TestCase{"equal edge distances keep first candidate", equalEdgeDistancesKeepFirstCandidate},
+            TestCase{"edge projection clamps to both endpoints", edgeProjectionIsClampedToBothEndpoints},
+            TestCase{"diagonal fractional edges in both directions", diagonalEdgesSupportFractionalCoordinatesAndBothDirections},
+            TestCase{"zero-length edge is a point", zeroLengthEdgeIsTreatedAsPoint},
+            TestCase{"edge hits follow vertex and polygon moves", edgeHitsFollowVertexAndPolygonMoves},
+            TestCase{"edge hit skips missing edge reference", edgeHitSkipsMissingEdgeReference},
+            TestCase{"edge hit skips missing start or end", edgeHitSkipsMissingStartOrEnd}
         };
         return tests;
     }

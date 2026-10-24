@@ -14,7 +14,7 @@ namespace cad::win32
         };
     }
 
-    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon)
+    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon, std::optional<cad::EdgeId> selectedEdge)
     {
         HPEN normalPen = CreatePen(PS_SOLID, 2, RGB(0,0,0));
         HPEN selectedPen = CreatePen(PS_SOLID, 4, RGB(0,120,215));
@@ -30,9 +30,6 @@ namespace cad::win32
 
         for (const auto& [id, polygon] : document.getPolygons())
         {
-            SelectObject(
-                dc,
-                selectedPolygon == id ? selectedPen : normalPen);
             for (const auto IdEdge : polygon.edges)
             {
                 const Edge* ed = document.findEdge(IdEdge);
@@ -47,6 +44,10 @@ namespace cad::win32
 
                 const POINT p1 = worldToScreen(start->position, clientRect);
                 const POINT p2 = worldToScreen(end->position, clientRect);
+
+                const bool highlighted =
+                    selectedPolygon == id || selectedEdge == IdEdge;
+                SelectObject(dc, highlighted ? selectedPen : normalPen);
 
                 MoveToEx(dc, p1.x, p1.y, nullptr);
                 LineTo(dc, p2.x, p2.y);

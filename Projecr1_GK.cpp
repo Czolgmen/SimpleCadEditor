@@ -171,6 +171,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 state->drag.grabOffset = vertex->position - worldPosition;
                 SetCapture(hWnd);
             }
+        } else if ((state->selection.edge = cad::editor::hitTestEdge(state->document, worldPosition, 6.0))) 
+        {
         } else
         {
             state->selection.polygon =
@@ -321,7 +323,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     {
                         FillRect(targetDc, &clientRect, GetSysColorBrush(COLOR_WINDOW));
                         if (state)
-                            cad::win32::drawDocument(targetDc, state->document, clientRect, state->selection.vertex, state->selection.polygon);
+                            cad::win32::drawDocument(targetDc, state->document, clientRect, state->selection.vertex, state->selection.polygon, state->selection.edge);
                     };
 
                     if (state && state->backBuffer.resize(dc, width, height))

@@ -22,4 +22,11 @@ namespace cad::editor
         const Document& document,
         const Vec2& worldPosition
     );
+
+    std::optional<EdgeId> hitTestEdge (
+        const Document& document,
+        const Vec2& worldPosition,
+        double tolerance
+    );
+
 }
