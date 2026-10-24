@@ -7,6 +7,7 @@
 #include <cad_core/model/Validation.h>
 
 #include <cad_core/constraints/FixedLengthConstraint.h>
+#include <cad_core/constraints/ParallelConstraint.h>
 
 #include <cad_core/geometry/Vec2.h>
 
@@ -26,6 +27,7 @@ namespace cad
         std::map<PolygonId, Polygon> polygons;
         std::map<EdgeId, Edge> edges;
         std::vector<constraint::FixedLengthConstraint> fixedLengthConstraints;
+        std::vector<constraint::ParallelConstraint> parallelConstraints;
 
         std::uint64_t nextVertexId = 1;
         std::uint64_t nextEdgeId = 1;
@@ -47,9 +49,17 @@ namespace cad
         bool deleteVertex(VertexId id);
 
         std::span<const constraint::FixedLengthConstraint> getFixedLengthConstraints() const;
+        std::span<const constraint::ParallelConstraint> getParallelConstraints() const;
 
         bool setFixedLength(EdgeId edge, double length);
         bool removeFixedLength(EdgeId edge);
+
+        // Adds a valid unordered pair without moving geometry; duplicates return false.
+        bool addParallel(EdgeId first, EdgeId second);
+        // Either order is accepted; a missing pair returns false. Geometry need not be valid.
+        bool removeParallel(EdgeId first, EdgeId second);
+
+        void removeParallelsForEdge(EdgeId edge);
 
     };
 

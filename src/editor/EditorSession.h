@@ -36,6 +36,12 @@ namespace cad::editor
         bool setSelectedEdgeLength(double length);
         bool removeSelectedEdgeLength();
 
+        std::optional<EdgeId> pendingParallelEdge() const noexcept;
+        bool beginParallelSelection();
+        // Failure keeps the document, selection and pending first edge unchanged.
+        bool completeParallelSelection(EdgeId second);
+        void cancelParallelSelection() noexcept;
+
     private:
         struct DragTransaction
         {
@@ -46,5 +52,6 @@ namespace cad::editor
         Document document_;
         Selection selection_;
         std::optional<DragTransaction> drag_;
+        std::optional<EdgeId> pendingParallelEdge_;
     };
 }

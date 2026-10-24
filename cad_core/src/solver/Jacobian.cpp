@@ -14,7 +14,19 @@ namespace cad::solver::detail
         std::span<const double> baseErrors,
         double geometryScale)
     {
-        if (baseErrors.size() != constraints.size() || !std::isfinite(geometryScale) || geometryScale <= 0)
+        return computeConstraintJacobian(document, constraints, {}, variableVertices, baseErrors, geometryScale);
+    }
+
+    std::optional<DenseMatrix> computeConstraintJacobian(
+        const Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        std::span<const VertexId> variableVertices,
+        std::span<const double> baseErrors,
+        double geometryScale)
+    {
+        const std::size_t rowCount = lengths.size() + parallels.size();
+        if (baseErrors.size() != rowCount || !std::isfinite(geometryScale) || geometryScale <= 0)
             return std::nullopt;
         for (const double error : baseErrors)
             if (!std::isfinite(error))
@@ -24,7 +36,7 @@ namespace cad::solver::detail
         if (!std::isfinite(step) || step <= 0)
             return std::nullopt;
 
-        DenseMatrix jacobian(constraints.size(), std::vector<double>(2 * variableVertices.size(), 0.0));
+        DenseMatrix jacobian(rowCount, std::vector<double>(2 * variableVertices.size(), 0.0));
         for (std::size_t vertexIndex = 0; vertexIndex < variableVertices.size(); ++vertexIndex)
         {
             const VertexId vertexId = variableVertices[vertexIndex];
@@ -49,14 +61,20 @@ namespace cad::solver::detail
                 Document probe = document;
                 if (!probe.moveVertex(vertexId, samplePosition))
                     return std::nullopt;
-                const auto sampleErrors = evaluateErrors(probe, constraints);
+                const auto sampleErrors = evaluateErrors(probe, lengths, parallels);
                 if (!sampleErrors)
                     return std::nullopt;
 
                 const std::size_t column = 2 * vertexIndex + axis;
-                for (std::size_t row = 0; row < constraints.size(); ++row)
+                for (std::size_t row = 0; row < rowCount; ++row)
                 {
-                    const double derivative = ((*sampleErrors)[row] - baseErrors[row]) / actualStep;
+                    // d(F_length / scale)/d(q) = d(F_length)/d(position).
+                    // Parallel errors are unscaled: divide their difference by delta(q).
+                    const double denominator = row < lengths.size()
+                        ? actualStep : actualStep / geometryScale;
+                    if (!std::isfinite(denominator) || denominator <= 0)
+                        return std::nullopt;
+                    const double derivative = ((*sampleErrors)[row] - baseErrors[row]) / denominator;
                     if (!std::isfinite(derivative))
                         return std::nullopt;
                     jacobian[row][column] = derivative;

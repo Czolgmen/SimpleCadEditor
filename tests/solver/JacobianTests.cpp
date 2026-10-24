@@ -12,6 +12,7 @@ namespace
     using namespace cad;
     using namespace cad::solver::detail;
     using constraint::FixedLengthConstraint;
+    using constraint::ParallelConstraint;
     using cad::tests::require;
 
     struct Fixture
@@ -32,6 +33,18 @@ namespace
     void requireNear(double actual, double expected, double tolerance = 2e-7)
     {
         require(std::isfinite(actual) && std::abs(actual - expected) <= tolerance, "Unexpected derivative");
+    }
+
+    void requireMatrixNear(const std::optional<DenseMatrix>& actual, const DenseMatrix& expected,
+        double tolerance = 2e-7)
+    {
+        require(actual && actual->size() == expected.size(), "Wrong Jacobian row count");
+        for (std::size_t row = 0; row < expected.size(); ++row)
+        {
+            require((*actual)[row].size() == expected[row].size(), "Wrong Jacobian column count");
+            for (std::size_t column = 0; column < expected[row].size(); ++column)
+                requireNear((*actual)[row][column], expected[row][column], tolerance);
+        }
     }
 
     void diagonalEndHasExpectedDerivatives()
@@ -192,6 +205,193 @@ namespace
         require(document.findVertex(variables[0])->position.x == maximum, "Rejected sample changed document");
     }
 
+    void mixedRowsUseKnownDerivativesAndInputOrder()
+    {
+        Fixture f;
+        const std::array extraPositions{Vec2{-5, -5}, Vec2{-4, -5}, Vec2{-5, -4}};
+        const VertexId unrelated = f.document.findPolygon(f.document.addPolygon(extraPositions))->vertices[0];
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}, FixedLengthConstraint{f.edges[1], 7}};
+        const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}};
+        const std::array variables{f.vertices[2], f.vertices[0], f.vertices[1], unrelated};
+        const auto errors = evaluateErrors(f.document, lengths, parallels);
+        require(errors && errors->size() == 3, "Mixed raw error vector has wrong size");
+        requireNear((*errors)[0], 5);
+        requireNear((*errors)[1], 3);
+        requireNear((*errors)[2], 0.6);
+        const auto matrix = computeConstraintJacobian(f.document, lengths, parallels, variables, *errors, 10);
+        // Both edges meet at B. Its parallel derivative contains contributions from BOTH edges.
+        const DenseMatrix expected{
+            {0, 0, -0.6, -0.8, 0.6, 0.8, 0, 0},
+            {0, 1, 0, 0, 0, -1, 0, 0},
+            {-0.8, 0, -0.64, 0.48, 1.44, -0.48, 0, 0}};
+        requireMatrixNear(matrix, expected);
+    }
+
+    void parallelOnlyJacobianIncludesAllFourEndpoints()
+    {
+        Document document;
+        const std::array firstPoints{Vec2{0, 0}, Vec2{10, 0}, Vec2{0, 10}};
+        const std::array secondPoints{Vec2{20, 0}, Vec2{26, 8}, Vec2{20, 10}};
+        const auto* first = document.findPolygon(document.addPolygon(firstPoints));
+        const auto* second = document.findPolygon(document.addPolygon(secondPoints));
+        const std::array parallels{ParallelConstraint{first->edges[0], second->edges[0]}};
+        const std::array variables{first->vertices[0], first->vertices[1], second->vertices[0], second->vertices[1]};
+        const auto errors = evaluateErrors(document, {}, parallels);
+        require(errors.has_value(), "Parallel error evaluation failed");
+        const auto matrix = computeConstraintJacobian(document, {}, parallels, variables, *errors, 10);
+        requireMatrixNear(matrix, {{0, 0.6, 0, -0.6, 0.48, -0.36, -0.48, 0.36}});
+    }
+
+    void mixedJacobianIsInvariantUnderUniformGeometryScaling()
+    {
+        for (const double scale : {1e-100, 1.0, 1e100})
+        {
+            const Fixture f{scale};
+            const std::array lengths{FixedLengthConstraint{f.edges[0], 5 * scale}, FixedLengthConstraint{f.edges[1], 7 * scale}};
+            const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}};
+            const std::array variables{f.vertices[2], f.vertices[0], f.vertices[1]};
+            const auto errors = evaluateErrors(f.document, lengths, parallels);
+            require(errors.has_value(), "Scaled mixed errors failed");
+            const auto matrix = computeConstraintJacobian(f.document, lengths, parallels, variables, *errors, 10 * scale);
+            requireMatrixNear(matrix, {{0, 0, -0.6, -0.8, 0.6, 0.8}, {0, 1, 0, 0, 0, -1},
+                {-0.8, 0, -0.64, 0.48, 1.44, -0.48}});
+        }
+    }
+
+    void changingNormalizationScaleAffectsOnlyParallelRows()
+    {
+        const Fixture f;
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}};
+        const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}};
+        const std::array variables{f.vertices[1]};
+        const auto errors = evaluateErrors(f.document, lengths, parallels);
+        require(errors.has_value(), "Mixed error evaluation failed");
+        for (const double scale : {2.0, 10.0, 50.0})
+        {
+            const auto matrix = computeConstraintJacobian(f.document, lengths, parallels, variables, *errors, scale);
+            require(matrix && matrix->size() == 2 && (*matrix)[0].size() == 2 && (*matrix)[1].size() == 2,
+                "Wrong mixed matrix dimensions");
+            requireNear((*matrix)[0][0], 0.6);
+            requireNear((*matrix)[0][1], 0.8);
+            requireNear((*matrix)[1][0] / scale, 0.144);
+            requireNear((*matrix)[1][1] / scale, -0.048);
+        }
+    }
+
+    void reversedParallelPairsHaveOppositeDerivativeRows()
+    {
+        const Fixture f;
+        const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}, ParallelConstraint{f.edges[1], f.edges[0]}};
+        const std::array variables{f.vertices[1]};
+        const auto errors = evaluateErrors(f.document, {}, parallels);
+        require(errors.has_value(), "Parallel error evaluation failed");
+        const auto matrix = computeConstraintJacobian(f.document, {}, parallels, variables, *errors, 10);
+        requireMatrixNear(matrix, {{1.44, -0.48}, {-1.44, 0.48}});
+    }
+
+    void mixedSamplesPreserveSourceAndRawInputs()
+    {
+        Fixture f;
+        require(f.document.setFixedLength(f.edges[0], 10), "Fixture relation failed");
+        const Document before = f.document;
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}};
+        const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}};
+        const std::array variables{f.vertices[0], f.vertices[1], f.vertices[2]};
+        const auto errors = evaluateErrors(f.document, lengths, parallels);
+        require(errors.has_value(), "Mixed error evaluation failed");
+        const auto originalErrors = *errors;
+        require(computeConstraintJacobian(f.document, lengths, parallels, variables, *errors, 10).has_value(),
+            "Mixed sampling failed");
+        require(*errors == originalErrors && lengths[0].length == 5 && parallels[0].first == f.edges[0] &&
+            parallels[0].second == f.edges[1], "Sampling modified the input arrays");
+        require(f.document.getPolygons().size() == before.getPolygons().size(), "Sampling changed polygon count");
+        for (const auto& [id, polygon] : before.getPolygons())
+        {
+            const auto* actual = f.document.findPolygon(id);
+            require(actual && actual->vertices == polygon.vertices && actual->edges == polygon.edges, "Topology changed");
+            for (const VertexId vertexId : polygon.vertices)
+            {
+                const Vec2 original = before.findVertex(vertexId)->position;
+                const Vec2 position = f.document.findVertex(vertexId)->position;
+                require(position.x == original.x && position.y == original.y, "Source position changed");
+            }
+        }
+        const auto stored = f.document.getFixedLengthConstraints();
+        require(stored.size() == 1 && stored[0].edge == f.edges[0] && stored[0].length == 10,
+            "Sampling overwrote a stored constraint with a supplied constraint");
+    }
+
+    void mixedJacobianRejectsInvalidInputs()
+    {
+        const Fixture f;
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}};
+        const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}};
+        const std::array variables{f.vertices[1]};
+        const auto errors = evaluateErrors(f.document, lengths, parallels);
+        require(errors.has_value(), "Mixed error evaluation failed");
+        const std::array tooFew{5.0};
+        require(!computeConstraintJacobian(f.document, lengths, parallels, variables, tooFew, 10),
+            "Missing parallel residual was accepted");
+        for (const double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()})
+        {
+            for (std::size_t row = 0; row < errors->size(); ++row)
+            {
+                auto broken = *errors;
+                broken[row] = invalid;
+                require(!computeConstraintJacobian(f.document, lengths, parallels, variables, broken, 10),
+                    "Non-finite mixed residual was accepted");
+            }
+        }
+        for (const double scale : {0.0, -1.0, std::numeric_limits<double>::infinity()})
+            require(!computeConstraintJacobian(f.document, lengths, parallels, variables, *errors, scale),
+                "Invalid mixed scale was accepted");
+        const std::array missing{VertexId{999999}};
+        require(!computeConstraintJacobian(f.document, lengths, parallels, missing, *errors, 10),
+            "Missing mixed variable was accepted");
+        const std::array brokenParallels{ParallelConstraint{f.edges[0], EdgeId{}}};
+        require(!computeConstraintJacobian(f.document, lengths, brokenParallels, variables, *errors, 10),
+            "Failed parallel sample evaluation was accepted");
+    }
+
+    void collapsedParallelSampleRejectsWithoutMutation()
+    {
+        Document document;
+        const double step = std::sqrt(std::numeric_limits<double>::epsilon());
+        const std::array firstPoints{Vec2{0, 0}, Vec2{step, 0}, Vec2{0, 1}};
+        const std::array secondPoints{Vec2{0, 2}, Vec2{1, 2}, Vec2{0, 3}};
+        const auto* first = document.findPolygon(document.addPolygon(firstPoints));
+        const auto* second = document.findPolygon(document.addPolygon(secondPoints));
+        const std::array parallels{ParallelConstraint{first->edges[0], second->edges[0]}};
+        const std::array variables{first->vertices[0]};
+        const auto errors = evaluateErrors(document, {}, parallels);
+        require(errors.has_value(), "Initial directions should be valid");
+        require(!computeConstraintJacobian(document, {}, parallels, variables, *errors, 1),
+            "Sample collapsing a parallel edge was accepted");
+        const Vec2 position = document.findVertex(variables[0])->position;
+        require(position.x == 0 && position.y == 0 && document.validate().empty(), "Rejected sample modified source");
+        const auto after = evaluateErrors(document, {}, parallels);
+        require(after && *after == *errors, "Rejected sample changed original residuals");
+    }
+
+    void mixedJacobianUsesActualNormalizedDisplacement()
+    {
+        Document document;
+        const double offset = 1e12;
+        const std::array firstPoints{Vec2{0, 0}, Vec2{10, 0}, Vec2{0, 10}};
+        const std::array secondPoints{Vec2{offset, 0}, Vec2{offset + 6, 8}, Vec2{offset, 10}};
+        const auto* first = document.findPolygon(document.addPolygon(firstPoints));
+        const auto* second = document.findPolygon(document.addPolygon(secondPoints));
+        const std::array lengths{FixedLengthConstraint{second->edges[0], 5}};
+        const std::array parallels{ParallelConstraint{first->edges[0], second->edges[0]}};
+        const std::array variables{second->vertices[1]};
+        const auto errors = evaluateErrors(document, lengths, parallels);
+        require(errors.has_value(), "Offset mixed residuals failed");
+        const auto matrix = computeConstraintJacobian(document, lengths, parallels, variables, *errors, 10);
+        // At this offset the representable X displacement is much larger than the requested step.
+        requireMatrixNear(matrix, {{0.6, 0.8}, {-0.48, 0.36}}, 2e-5);
+        require(document.findVertex(variables[0])->position.x == offset + 6, "Mixed fallback changed source");
+    }
+
     void emptyDimensionsAreSupported()
     {
         const Fixture f;
@@ -220,7 +420,16 @@ namespace cad::tests
             TestCase{"missing or non-finite variable vertex", rejectsMissingOrNonFiniteVariable},
             TestCase{"failed sample error evaluation", rejectsFailedErrorEvaluation},
             TestCase{"unrepresentable positive sample", rejectsUnrepresentablePositiveSample},
-            TestCase{"empty matrix dimensions", emptyDimensionsAreSupported}
+            TestCase{"empty matrix dimensions", emptyDimensionsAreSupported},
+            TestCase{"mixed rows: known derivatives, order and unrelated zeros", mixedRowsUseKnownDerivativesAndInputOrder},
+            TestCase{"parallel-only Jacobian across four endpoints", parallelOnlyJacobianIncludesAllFourEndpoints},
+            TestCase{"mixed Jacobian is invariant under uniform geometry scaling", mixedJacobianIsInvariantUnderUniformGeometryScaling},
+            TestCase{"normalization scale affects only parallel rows", changingNormalizationScaleAffectsOnlyParallelRows},
+            TestCase{"reversed parallel pairs have opposite derivative rows", reversedParallelPairsHaveOppositeDerivativeRows},
+            TestCase{"mixed samples preserve source and raw inputs", mixedSamplesPreserveSourceAndRawInputs},
+            TestCase{"invalid mixed Jacobian inputs", mixedJacobianRejectsInvalidInputs},
+            TestCase{"collapsed parallel sample rejects without mutation", collapsedParallelSampleRejectsWithoutMutation},
+            TestCase{"mixed Jacobian uses actual normalized displacement", mixedJacobianUsesActualNormalizedDisplacement}
         };
         return tests;
     }

@@ -45,6 +45,10 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 
 Testy dokumentu używają publicznego API, z wyjątkiem celowego uszkodzenia odwołania do wierzchołka w teście odrzucania ruchu. Nie badają prywatnego układu kontenerów ani awarii alokacji pamięci.
 
+[DocumentParallelTests.cpp](core/DocumentParallelTests.cpp) zawiera 14 przypadków magazynu równoległości: dodawanie par wewnątrz i między wielokątami bez zmiany geometrii, odrzucanie duplikatów w obu kolejnościach, wiele par dla jednej krawędzi, nieistniejące ID, relacje z samą sobą, zerowe i nieskończone kierunki oraz NaN. Sprawdza usuwanie pierwszej, środkowej i ostatniej pary w obu kolejnościach, ponowne dodanie, brak zmian po odrzuceniu operacji i niezależność kopii dokumentu. Usunięcie istniejącej pary działa także po powstaniu zerowej długości lub uszkodzeniu jej odwołań. Getter jest sprawdzany jako `span<const ParallelConstraint>`. Uszkodzone odwołania i współrzędne powstają wyłącznie w fixture testów przez `const_cast` nieconst dokumentu.
+
+Cztery przypadki dotyczą zmian topologii. Podział każdej krawędzi i usunięcie każdego wierzchołka dwóch czworokątów, również na zamknięciu konturu, usuwają wszystkie pary dotyczące zmienionych krawędzi. Pozostałe pary zachowują kolejność i poprawne odwołania; nowe krawędzie nie dziedziczą relacji. Równocześnie sprawdzane jest zachowanie niezwiązanych ograniczeń długości. Odrzucony podział lub usunięcie dla brakujących ID, uszkodzonych końców oraz ochrona trójkąta zachowują magazyn relacji i geometrię.
+
 [Vec2Tests.cpp](geometry/Vec2Tests.cpp) zawiera 22 przypadki obejmujące:
 
 - Konstruktor domyślny i konstruktor ze współrzędnymi.
@@ -113,7 +117,7 @@ Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co
 
 Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu źródłowego, który jest nieconst. Testy nie symulują błędów alokacji pamięci.
 
-[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 33 przypadki wykonywane bez okna i bibliotek Windows:
+[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 40 przypadków wykonywanych bez okna i bibliotek Windows:
 
 - Priorytet i wyłączność zaznaczenia, kliknięcie tła, menu kontekstowe bez gestu i niemodyfikowalne wyniki odczytu.
 - Przeciąganie punktu z przesunięciem miejsca złapania i figury względem początku gestu, przy zachowaniu pozostałych obiektów.
@@ -124,6 +128,9 @@ Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu �
 - Przeciąganie z długością: dokładne położenie prowadzonego punktu z przesunięciem miejsca złapania, dopasowanie sąsiada, kontynuację od ostatniego podglądu oraz brak ruchu pozostałych punktów.
 - Zachowanie ostatniego poprawnego podglądu po odrzuceniu przez solver, dalszy ruch po odrzuceniu, zatwierdzenie po puszczeniu przycisku oraz anulowanie i Esc odtwarzające pozycje i relacje. Translacja całego wielokąta również zachowuje długości.
 - Polecenia dodania, aktualizacji i usunięcia długości na zaznaczonej krawędzi: blokadę jej początku, brak duplikatów, wartość domyślną z geometrii, brak zmian przy błędnej długości lub braku zbieżności, wymaganie odpowiedniego zaznaczenia i swobodne przeciąganie po usunięciu relacji.
+- Samą równoległość oraz wspólne długości i równoległość podczas kolejnych podglądów ruchu, z dokładnym położeniem prowadzonego punktu i przesunięciem miejsca złapania. Pary obejmują przeciwne kierunki w jednej figurze i krawędzie różnych figur.
+- Zachowanie ostatniego podglądu, relacji i zaznaczenia po degeneracji kandydata, dalszy ruch albo zatwierdzenie po odrzuceniu oraz anulowanie i Esc odtwarzające cały dokument.
+- Ustawianie i aktualizację długości z jednoczesnym zachowaniem równoległości, odrzucenie konfliktu długości z równoległością bez zmiany dokumentu oraz translację figury zachowującą relację między wielokątami.
 
 [FixedLengthConstraintTests.cpp](constraints/FixedLengthConstraintTests.cpp) zawiera 17 przypadków obejmujących:
 
@@ -136,12 +143,27 @@ Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu �
 
 Porównania uwzględniają tolerancję bezwzględną i względną; bardzo mały wynik jest najpierw skalowany, aby tolerancja bezwzględna nie ukrywała błędnego zera. Brakujące odwołania oraz współrzędne z NaN i nieskończonościami powstają wyłącznie w fixture testów przez `const_cast` nieconst dokumentu.
 
+[ParallelConstraintTests.cpp](constraints/ParallelConstraintTests.cpp) zawiera 18 przypadków obejmujących:
+
+- Równoległe i przeciwne kierunki osiowe oraz ukośne, znaki błędu dla prostopadłości i znane błędy dla innych kątów.
+- Zmianę znaku po zamianie krawędzi lub odwróceniu jednego kierunku oraz zachowanie wyniku po odwróceniu obu.
+- Niezależne skale długości od `1e-200` do `1e200`, przesunięcia i ułamkowe współrzędne, krawędzie z różnych wielokątów oraz sąsiednie krawędzie ze wspólnym wierzchołkiem.
+- Odrzucanie tej samej krawędzi, brakujących krawędzi i każdego z czterech końców, zerowej długości jednego lub obu odcinków oraz NaN i obu nieskończoności w każdej współrzędnej każdego końca.
+- Przepełnienie różnicy współrzędnych i niereprezentowalną długość na dowolnej krawędzi, zachowanie małego niezerowego błędu i odczyt aktualnej geometrii po przesunięciu.
+- Brak zmian geometrii, topologii, przekazanej relacji i zapisanych ograniczeń długości po poprawnych i odrzuconych obliczeniach.
+
+Testy równoległości porównują skończone wyniki z tolerancją `1e-12`; dla bardzo małego błędu stosują `1e-24`. Niepoprawne odwołania i nieskończone współrzędne powstają wyłącznie w testach przez `const_cast` nieconst dokumentu. Ten zestaw sprawdza funkcję błędu; wspólne rozwiązywanie bada `MixedConstraintSolverTests`. Równoległość nie jest jeszcze podłączona do UI.
+
 [DenseLinearAlgebraTests.cpp](solver/DenseLinearAlgebraTests.cpp) zawiera 8 przypadków: znany układ 3x3, zamianę wierszy przy wyborze elementu głównego, osobliwość, niepoprawne wymiary, NaN i nieskończoności oraz przepełnienie obliczeń, różne skale współczynników, pusty układ i zachowanie danych wejściowych.
 
 [ConstraintSolverTests.cpp](solver/ConstraintSolverTests.cpp) zawiera 29 przypadków: walidację i wczesne zakończenia publicznego API oraz algorytm korekty **z zadanymi macierzami, przez prywatny punkt wstrzykiwania zależności**. Sprawdza oba kierunki blokowania, rozdzielenie korekty między wolne końce, sprzężone długości, wiele wielokątów, relacje nadmiarowe i konfliktowe, limit iteracji, niepoprawne macierze, odrzucanie kroków, zmniejszanie kroku, wyjątki i skalowanie. Osiem przypadków sprawdza pełną ścieżkę publicznego API z obliczanym Jacobianem: ukośną krawędź z blokowaniem obu końców osobno, sprzężony trójkąt, wiele wielokątów, nadmiarowe długości, wycofanie konfliktu i przekroczenia limitu oraz małe i duże skale.
 
-[JacobianTests.cpp](solver/JacobianTests.cpp) zawiera 12 przypadków obejmujących znane pochodne i ich znaki, kolejność wierszy i kolumn, niezależne próbki i zachowanie danych wejściowych, małą i dużą skalę, krok przez `nextafter`, brakujące wierzchołki, niepoprawne dane i błędy próbkowania oraz puste wymiary. Szczegóły algorytmu opisuje [dokumentacja Jacobiego](../docs/architecture/09-jacobian.md).
+[MixedConstraintSolverTests.cpp](solver/MixedConstraintSolverTests.cpp) zawiera 19 przypadków publicznego `solveConstraints`: puste i już spełnione relacje, oba zwroty równoległych krawędzi, walidację opcji, geometrii i metadanych, zerowe i przepełnione kierunki, samą równoległość oraz wspólne długości i równoległość. Obejmuje wspólny wierzchołek, zamknięty cykl z nadmiarowymi równaniami, trzy wielokąty, niepowiązany punkt blokowany, początkową prostopadłość, oddzielne tolerancje, limit i zerowy budżet iteracji, konflikty, różne skale i relacje przekazane przez span z dokumentu. Sukces jest sprawdzany niezależnie przez funkcje błędów, a odrzucenie przez porównanie dokumentu z kopią wejściową. Próba wyjścia z prostopadłości także musi respektować budżet i wycofanie operacji.
+
+[JacobianTests.cpp](solver/JacobianTests.cpp) zawiera 21 przypadków obejmujących znane pochodne i ich znaki, kolejność wierszy i kolumn, niezależne próbki i zachowanie danych wejściowych, małą i dużą skalę, krok przez `nextafter`, brakujące wierzchołki, niepoprawne dane i błędy próbkowania oraz puste wymiary. Dziewięć przypadków sprawdza wspólny Jacobian długości i równoległości: znane pochodne przy wspólnym wierzchołku, cztery końce krawędzi z różnych wielokątów, zgodne skalowanie wierszy, zamianę pary, zachowanie surowych danych, błędne wejście, degenerację próbki i rzeczywisty krok znormalizowany. Dotychczasowe testy długości nadal działają przez `computeJacobian`. Szczegóły algorytmu opisuje [dokumentacja Jacobiego](../docs/architecture/09-jacobian.md).
 
 [LengthInputTests.cpp](editor/LengthInputTests.cpp) zawiera 6 przypadków: liczby dziesiętne i wykładnicze, przecinek dziesiętny, białe znaki i plus, niepoprawny tekst oraz częściowy odczyt, wartości niedodatnie, NaN, nieskończoności, przekroczenie zakresu i zachowanie małych oraz dużych liczb reprezentowalnych. Natywny dialog i rysowanie nie należą do przenośnego zestawu konsolowego.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia dwanaście zestawów i podaje wspólny wynik **241 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[EditorParallelTests.cpp](editor/EditorParallelTests.cpp) zawiera 12 przypadków wyboru pary w przenośnej sesji: wymaganie niezerowej krawędzi, brak równoczesnego przeciągania, zachowanie trybu po puszczeniu przycisku, anulowanie i ponowny wybór, pary wewnątrz i między figurami, oba zwroty kierunków, dokładną blokadę początku pierwszej krawędzi oraz zachowanie długości. Obejmuje nieistniejący lub zerowy drugi segment, wybór tej samej krawędzi, duplikaty w obu kolejnościach, konflikt z długościami i pełne wycofanie geometrii oraz relacji. Sprawdza też ponowną próbę po odrzuceniu, usuwanie zapamiętanego ID po innych poleceniach, niepoprawne wejście i przeciąganie z nową parą po zatwierdzeniu.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia szesnaście zestawów i podaje wspólny wynik **320 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

@@ -83,16 +83,20 @@
   <ItemGroup>
     <ClCompile Include="TestsMain.cpp" />
     <ClCompile Include="constraints\FixedLengthConstraintTests.cpp" />
+    <ClCompile Include="constraints\ParallelConstraintTests.cpp" />
     <ClCompile Include="solver\DenseLinearAlgebraTests.cpp" />
     <ClCompile Include="solver\ConstraintSolverTests.cpp" />
+    <ClCompile Include="solver\MixedConstraintSolverTests.cpp" />
     <ClCompile Include="solver\JacobianTests.cpp" />
     <ClCompile Include="core\DocumentTests.cpp" />
+    <ClCompile Include="core\DocumentParallelTests.cpp" />
     <ClCompile Include="core\DeleteVertexTests.cpp" />
     <ClCompile Include="core\SplitEdgeTests.cpp" />
     <ClCompile Include="core\ValidationTests.cpp" />
     <ClCompile Include="geometry\Vec2Tests.cpp" />
     <ClCompile Include="editor\HitTesterTests.cpp" />
     <ClCompile Include="editor\EditorSessionTests.cpp" />
+    <ClCompile Include="editor\EditorParallelTests.cpp" />
     <ClCompile Include="editor\LengthInputTests.cpp" />
     <ClCompile Include="..\src\editor\LengthInput.cpp" />
     <ClCompile Include="..\src\editor\HitTester.cpp" />

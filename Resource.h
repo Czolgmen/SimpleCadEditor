@@ -13,6 +13,7 @@
 #define IDM_DELETE_VERTEX            32772
 #define IDM_SET_FIXED_LENGTH         32773
 #define IDM_REMOVE_FIXED_LENGTH      32774
+#define IDM_ADD_PARALLEL             32775
 #define IDD_FIXED_LENGTH             129
 #define IDC_LENGTH_EDIT              1000
 #define IDI_PROJECR1GK			107
@@ -29,7 +30,7 @@
 
 #define _APS_NO_MFC					130
 #define _APS_NEXT_RESOURCE_VALUE	130
-#define _APS_NEXT_COMMAND_VALUE		32775
+#define _APS_NEXT_COMMAND_VALUE		32776
 #define _APS_NEXT_CONTROL_VALUE		1001
 #define _APS_NEXT_SYMED_VALUE		110
 #endif

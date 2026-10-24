@@ -17,15 +17,19 @@ int main()
 {
     const std::array suites{
         TestSuite{"Document", cad::tests::documentTests()},
+        TestSuite{"DocumentParallel", cad::tests::documentParallelTests()},
         TestSuite{"Vec2", cad::tests::vec2Tests()},
         TestSuite{"Validation", cad::tests::validationTests()},
         TestSuite{"HitTester", cad::tests::hitTesterTests()},
         TestSuite{"SplitEdge", cad::tests::splitEdgeTests()},
         TestSuite{"DeleteVertex", cad::tests::deleteVertexTests()},
         TestSuite{"EditorSession", cad::tests::editorSessionTests()},
+        TestSuite{"EditorParallel", cad::tests::editorParallelTests()},
         TestSuite{"FixedLengthConstraint", cad::tests::fixedLengthConstraintTests()},
+        TestSuite{"ParallelConstraint", cad::tests::parallelConstraintTests()},
         TestSuite{"DenseLinearAlgebra", cad::tests::denseLinearAlgebraTests()},
         TestSuite{"ConstraintSolver", cad::tests::constraintSolverTests()},
+        TestSuite{"MixedConstraintSolver", cad::tests::mixedConstraintSolverTests()},
         TestSuite{"Jacobian", cad::tests::jacobianTests()},
         TestSuite{"LengthInput", cad::tests::lengthInputTests()}
     };

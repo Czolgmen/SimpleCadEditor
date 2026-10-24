@@ -20,15 +20,19 @@ namespace cad::tests
     }
 
     std::span<const TestCase> documentTests();
+    std::span<const TestCase> documentParallelTests();
     std::span<const TestCase> vec2Tests();
     std::span<const TestCase> validationTests();
     std::span<const TestCase> hitTesterTests();
     std::span<const TestCase> splitEdgeTests();
     std::span<const TestCase> deleteVertexTests();
     std::span<const TestCase> editorSessionTests();
+    std::span<const TestCase> editorParallelTests();
     std::span<const TestCase> fixedLengthConstraintTests();
+    std::span<const TestCase> parallelConstraintTests();
     std::span<const TestCase> denseLinearAlgebraTests();
     std::span<const TestCase> constraintSolverTests();
+    std::span<const TestCase> mixedConstraintSolverTests();
     std::span<const TestCase> jacobianTests();
     std::span<const TestCase> lengthInputTests();
 }

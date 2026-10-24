@@ -43,6 +43,7 @@ namespace cad::editor
             return false;
 
         pointerUp();
+        cancelParallelSelection();
         selection_ = {};
         selection_.vertex = hitTestVertex(document_, worldPosition, tolerance);
         if (!selection_.vertex)
@@ -56,6 +57,8 @@ namespace cad::editor
 
     bool EditorSession::pointerDown(const Vec2& worldPosition, double tolerance)
     {
+        if (pendingParallelEdge_)
+            return false;
         if (!selectAt(worldPosition, tolerance))
             return false;
 
@@ -89,9 +92,10 @@ namespace cad::editor
             moved = candidate.moveVertex(vertex->vertex, worldPosition + vertex->grabOffset);
             if (moved)
             {
-                const auto result = solver::solveFixedLengths(
+                const auto result = solver::solveConstraints(
                     candidate,
                     candidate.getFixedLengthConstraints(),
+                    candidate.getParallelConstraints(),
                     vertex->vertex);
 
                 moved = result.status == solver::SolveStatus::Converged;
@@ -116,8 +120,10 @@ namespace cad::editor
 
     bool EditorSession::cancelInteraction()
     {
+        const bool wasPicking = pendingParallelEdge_.has_value();
+        cancelParallelSelection();
         if (!drag_)
-            return false;
+            return wasPicking;
         document_ = std::move(drag_->initialDocument);
         drag_.reset();
         return true;
@@ -154,6 +160,7 @@ namespace cad::editor
         const auto vertex = document_.splitEdge(*selection_.edge);
         if (!vertex)
             return false;
+        cancelParallelSelection();
         pointerUp();
         selection_ = {};
         selection_.vertex = vertex;
@@ -164,6 +171,7 @@ namespace cad::editor
     {
         if (!canDeleteSelectedVertex() || !document_.deleteVertex(*selection_.vertex))
             return false;
+        cancelParallelSelection();
         pointerUp();
         selection_ = {};
         return true;
@@ -205,11 +213,16 @@ namespace cad::editor
         Document candidate = document_;
         if (!candidate.setFixedLength(*selection_.edge, length))
             return false;
-        const auto result = solver::solveFixedLengths(candidate, candidate.getFixedLengthConstraints(), fixedVertex);
+        const auto result = solver::solveConstraints(
+            candidate,
+            candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(),
+            fixedVertex);
         if (result.status != solver::SolveStatus::Converged)
             return false;
 
         document_ = std::move(candidate);
+        cancelParallelSelection();
         pointerUp();
         return true;
     }
@@ -218,7 +231,51 @@ namespace cad::editor
     {
         if (!selection_.edge || !document_.removeFixedLength(*selection_.edge))
             return false;
+        cancelParallelSelection();
         pointerUp();
         return true;
+    }
+
+    std::optional<EdgeId> EditorSession::pendingParallelEdge() const noexcept
+    {
+        return pendingParallelEdge_;
+    }
+
+    bool EditorSession::beginParallelSelection()
+    {
+        const auto length = selectedEdgeLength();
+        if (!length || *length <= 0.0)
+            return false;
+        pointerUp();
+        pendingParallelEdge_ = selection_.edge;
+        return true;
+    }
+
+    bool EditorSession::completeParallelSelection(EdgeId second)
+    {
+        if (!pendingParallelEdge_)
+            return false;
+        const EdgeId first = *pendingParallelEdge_;
+        const auto* edge = document_.findEdge(first);
+        if (!edge)
+            return false;
+        const VertexId pinned = edge->start;
+        Document candidate = document_;
+        if (!candidate.addParallel(first, second))
+            return false;
+        const auto result = solver::solveConstraints(candidate, candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(), pinned);
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+        document_ = std::move(candidate);
+        cancelParallelSelection();
+        selection_ = {};
+        selection_.edge = second;
+        return true;
+    }
+
+    void EditorSession::cancelParallelSelection() noexcept
+    {
+        pendingParallelEdge_.reset();
     }
 }

@@ -4,9 +4,11 @@
 
 Prototyp solvera długości jest zaimplementowany w `cad_core/src/solver/ConstraintSolver.cpp`, a **`computeJacobian` w `cad_core/src/solver/Jacobian.cpp`** oblicza pochodne przez różnice skończone. Każda współrzędna jest próbkowana na osobnej kopii dokumentu. Nieudany pomiar zwraca `nullopt`, co solver traktuje jako brak zbieżności z zachowaniem dokumentu wejściowego. Solver jest uruchamiany przez `EditorSession` przy przeciąganiu wierzchołka i przy nadawaniu długości z menu PPM. Podczas przeciągania blokowany jest prowadzony punkt, a przy nadawaniu długości pierwszy koniec krawędzi.
 
+Wspólne obliczenia długości i równoległości udostępnia `computeConstraintJacobian`, wywoływany przez pętlę `solveConstraints`. `computeJacobian` zachowuje dotychczasową sygnaturę i wywołuje tę funkcję z pustą listą równoległości. Wspólny Jacobian i prawa strona układu używają tego samego skalowania. `Document` udostępnia już magazyn par; czyszczenie relacji przy zmianie topologii i UI równoległości pozostają kolejnymi etapami.
+
 ## Co oznacza macierz
 
-Niech `F[i]` oznacza błąd długości ograniczenia `i`. Niewiadome to kolejno współrzędne wierzchołków z `variableVertices`: `x0, y0, x1, y1, ...`. Wierzchołek blokowany przez użytkownika nie trafia do tej listy.
+Niech `F[i]` oznacza surowy błąd ograniczenia `i`. Wiersze długości poprzedzają wiersze równoległości. Niewiadome to kolejno współrzędne wierzchołków z `variableVertices`: `x0, y0, x1, y1, ...`. Wierzchołek blokowany przez użytkownika nie trafia do tej listy.
 
 `J[i][j]` opisuje, jak szybko zmienia się błąd `i`, gdy zwiększamy współrzędną `j`. Jest to pochodna cząstkowa. Dodatnia wartość oznacza lokalny wzrost błędu, ujemna jego spadek. Zmiana wierzchołka nieuczestniczącego w danej relacji daje zero w jej wierszu.
 
@@ -56,8 +58,14 @@ Wynik powinien być bliski macierzy `[[0.6, 0.8]]`. Solver wykorzysta ją do wyz
 
 ## Skalowanie i testy
 
-W funkcji zwracamy pochodne **surowego błędu względem współrzędnych świata**. Nie dzielimy ich dodatkowo przez `geometryScale`. Reszta solvera używa `F/scale` i korekty współrzędnych znormalizowanych `deltaWorld/scale`; przy wspólnej skali pochodna pozostaje taka sama: `d(F/scale)/d(x/scale) = dF/dx`.
+Dla wierszy długości zwracamy pochodne **surowego błędu względem współrzędnych świata**. Solver używa `F/scale` i korekty współrzędnych znormalizowanych `deltaWorld/scale`; przy wspólnej skali pochodna pozostaje taka sama: `d(F/scale)/d(x/scale) = dF/dx`. Dlatego próbkę długości dzielimy przez rzeczywisty krok świata `actualStep`.
+
+Wiersze równoległości są bezwymiarowe i ich błędów nie dzielimy przez skalę. Współrzędne nadal są znormalizowane, więc we wspólnym Jacobianie różnicę błędów równoległości dzielimy przez `actualStep / geometryScale`. Wynik jest pochodną względem `q = x/scale`. Nieskończony lub zerowy mianownik powoduje `nullopt`. Wejściowe `baseErrors` dla obu typów relacji pozostają surowe.
+
+To rozróżnienie jest konieczne: samo dopisanie wierszy równoległości z dotychczasowym mianownikiem dałoby macierz niespójną ze skalowaniem błędów i korekty. Próbki, kolejność wierzchołków i zabezpieczenia są wspólne dla obu funkcji; `computeJacobian` jest adapterem dla samych długości.
 
 Testy w `tests/solver/JacobianTests.cpp` porównują macierz ze znanymi pochodnymi, sprawdzają kolejność wierszy i kolumn, zera dla niepowiązanych wierzchołków, niezależność próbek, skalowanie i reprezentowalny krok przy dużej translacji. Obejmują także niepoprawne dane i nieudane pomiary.
 
 Testy solvera nadal wykorzystują zadane macierze do izolowanego sprawdzania tłumienia, doboru kroku i wycofania operacji. Dodatkowo pełna ścieżka publicznego `solveFixedLengths`, z obliczaniem Jacobiego, jest sprawdzana na ukośnej krawędzi z blokowaniem obu końców osobno, trójkącie z trzema długościami, wielu wielokątach, relacjach nadmiarowych i konfliktowych, limicie iteracji i różnych skalach sceny.
+
+`tests/solver/MixedConstraintSolverTests.cpp` sprawdza publiczne `solveConstraints` dla równoległości bez długości i przy wspólnych długościach, również przy wspólnym wierzchołku, wielu wielokątach, relacjach nadmiarowych, przeciwnych kierunkach i początkowej prostopadłości. Obejmuje oddzielne tolerancje, zachowanie prowadzonego punktu, różne skale i brak zmian po niepowodzeniu. Start od prostopadłości może wymagać małego ruchu próbnego, ponieważ pochodna sinusa w maksimum zanika; tę sytuację obsługuje pętla solvera przy nieudanej korekcie liniowej.

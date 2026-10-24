@@ -42,6 +42,9 @@
     <ClInclude Include="include\cad_core\constraints\FixedLengthConstraint.h">
       <Filter>include\constraints</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\constraints\ParallelConstraint.h">
+      <Filter>include\constraints</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\demo\DemoScene.hpp">
       <Filter>include\demo</Filter>
     </ClInclude>
@@ -78,6 +81,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\constraints\FixedLengthConstraint.cpp">
+      <Filter>src\constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="src\constraints\ParallelConstraint.cpp">
       <Filter>src\constraints</Filter>
     </ClCompile>
     <ClCompile Include="src\demo\DemoScene.cpp">

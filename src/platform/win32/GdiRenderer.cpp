@@ -4,9 +4,11 @@
 
 #include <cmath>
 #include <iomanip>
+#include <iterator>
 #include <locale>
 #include <numeric>
 #include <sstream>
+#include <string>
 
 namespace cad::win32
 {
@@ -18,15 +20,19 @@ namespace cad::win32
         };
     }
 
-    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect, std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon, std::optional<cad::EdgeId> selectedEdge)
+    void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect,
+        std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon,
+        std::optional<cad::EdgeId> selectedEdge, std::optional<cad::EdgeId> pendingParallelEdge)
     {
         HPEN normalPen = CreatePen(PS_SOLID, 2, RGB(0,0,0));
         HPEN selectedPen = CreatePen(PS_SOLID, 4, RGB(0,120,215));
+        HPEN pendingPen = CreatePen(PS_SOLID, 4, RGB(220,120,0));
 
-        if (!normalPen || !selectedPen)
+        if (!normalPen || !selectedPen || !pendingPen)
         {
             if (normalPen) DeleteObject(normalPen);
             if (selectedPen) DeleteObject(selectedPen);
+            if (pendingPen) DeleteObject(pendingPen);
             return;
         }
 
@@ -51,7 +57,7 @@ namespace cad::win32
 
                 const bool highlighted =
                     selectedPolygon == id || selectedEdge == IdEdge;
-                SelectObject(dc, highlighted ? selectedPen : normalPen);
+                SelectObject(dc, pendingParallelEdge == IdEdge ? pendingPen : (highlighted ? selectedPen : normalPen));
 
                 MoveToEx(dc, p1.x, p1.y, nullptr);
                 LineTo(dc, p2.x, p2.y);
@@ -97,12 +103,47 @@ namespace cad::win32
             const auto text = label.str();
             TextOutW(dc, middle.x + 8, middle.y + 8, text.c_str(), static_cast<int>(text.size()));
         }
+        SetTextColor(dc, RGB(130, 65, 0));
+        for (const auto& [id, polygon] : document.getPolygons())
+        {
+            (void)id;
+            for (const EdgeId edgeId : polygon.edges)
+            {
+                std::wstring text;
+                std::size_t number = 0;
+                for (const auto& pair : document.getParallelConstraints())
+                {
+                    ++number;
+                    if (pair.first == edgeId || pair.second == edgeId)
+                    {
+                        if (!text.empty()) text += L", ";
+                        text += L"P" + std::to_wstring(number);
+                    }
+                }
+                if (text.empty())
+                    continue;
+                const auto* edge = document.findEdge(edgeId);
+                if (!edge) continue;
+                const auto* start = document.findVertex(edge->start);
+                const auto* end = document.findVertex(edge->end);
+                if (!start || !end) continue;
+                const POINT middle = worldToScreen(
+                    {std::midpoint(start->position.x, end->position.x), std::midpoint(start->position.y, end->position.y)}, clientRect);
+                TextOutW(dc, middle.x + 8, middle.y - 20, text.c_str(), static_cast<int>(text.size()));
+            }
+        }
+        if (pendingParallelEdge)
+        {
+            constexpr wchar_t hint[] = L"Równoległość: kliknij drugą krawędź. Esc anuluje wybór.";
+            TextOutW(dc, clientRect.left + 10, clientRect.top + 10, hint, static_cast<int>(std::size(hint) - 1));
+        }
         SelectObject(dc, previousFont);
         SetTextColor(dc, previousText);
         SetBkMode(dc, previousBackground);
         SelectObject(dc, previousPen);
 
         DeleteObject(selectedPen);
+        DeleteObject(pendingPen);
         DeleteObject(normalPen);
     }
 }

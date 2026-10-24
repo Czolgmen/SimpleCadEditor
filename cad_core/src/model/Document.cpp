@@ -248,6 +248,7 @@ namespace cad {
             throw;
         }
 
+        removeParallelsForEdge(id);
         removeFixedLength(id);
         edgeIt->second.end = newVertexId;
         owner->vertices.swap(updatedVertices);
@@ -316,6 +317,8 @@ namespace cad {
         owner->vertices.swap(updatedVertices);
         owner->edges.swap(updatedEdges);
 
+        removeParallelsForEdge(incomingIt->first);
+        removeParallelsForEdge(outgoingIt->first);
         removeFixedLength(incomingIt->first);
         removeFixedLength(outgoingIt->first);
 
@@ -328,6 +331,10 @@ namespace cad {
     std::span<const constraint::FixedLengthConstraint> Document::getFixedLengthConstraints() const
     {
         return fixedLengthConstraints;
+    }
+    std::span<const constraint::ParallelConstraint> Document::getParallelConstraints() const
+    {
+        return parallelConstraints;
     }
     bool Document::setFixedLength(EdgeId edge, double length)
     {
@@ -373,4 +380,46 @@ namespace cad {
         fixedLengthConstraints.erase(it);
         return true;
     }
+    bool Document::addParallel(EdgeId first, EdgeId second)
+    {
+        const constraint::ParallelConstraint relation{first, second};
+        if (!constraint::parallelError(*this, relation))
+            return false;
+
+        const auto existing = std::find_if(parallelConstraints.begin(), parallelConstraints.end(),
+            [first, second](const auto& stored)
+            {
+                return (stored.first == first && stored.second == second) ||
+                    (stored.first == second && stored.second == first);
+            });
+        if (existing != parallelConstraints.end())
+            return false;
+
+        parallelConstraints.push_back(relation);
+        return true;
+    }
+    bool Document::removeParallel(EdgeId first, EdgeId second)
+    {
+        const auto existing = std::find_if(parallelConstraints.begin(), parallelConstraints.end(),
+            [first, second](const auto& stored)
+            {
+                return (stored.first == first && stored.second == second) ||
+                    (stored.first == second && stored.second == first);
+            });
+        if (existing == parallelConstraints.end())
+            return false;
+
+        parallelConstraints.erase(existing);
+        return true;
+    }
+
+    void Document::removeParallelsForEdge(EdgeId edge)
+    {
+        std::erase_if(parallelConstraints, [edge](const auto& relation)
+        {
+            return relation.first == edge || relation.second == edge;
+        });
+    }
+
+
 }

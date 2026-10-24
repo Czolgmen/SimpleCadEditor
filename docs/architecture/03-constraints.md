@@ -2,7 +2,9 @@
 
 [Spis treści](README.md)
 
-Bieżąca implementacja jest działającym prototypem długości: obejmuje walidację, skalowanie, tłumienie, dobór kroku, algebrę liniową i numeryczne [obliczanie Jacobiego](09-jacobian.md). Poniższy opis obejmuje także docelową równoległość, ciągłość i graf zależności. Prototyp przyjmuje skończone długości docelowe większe od zera, przekazuje relacje przez `span` i rozwiązuje wszystkie przekazane relacje; graf dotkniętej składowej nie jest jeszcze zaimplementowany.
+Bieżący `solveConstraints` wspólnie rozwiązuje długości i równoległość: obejmuje walidację, oddzielne tolerancje, zgodne skalowanie błędów i zmiennych, tłumienie, dobór kroku, algebrę liniową i numeryczne [obliczanie Jacobiego](09-jacobian.md). `solveFixedLengths` wywołuje tę samą pętlę z pustą listą równoległości. Poniższy opis obejmuje także docelową ciągłość i graf zależności. Prototyp przyjmuje skończone długości docelowe większe od zera, przekazuje relacje przez `span` i rozwiązuje wszystkie przekazane relacje. `Document` przechowuje pary równoległości i usuwa relacje zmienionych krawędzi przy zmianie topologii. Aplikacja dodaje parę przez wybór pierwszej krawędzi w menu PPM i kliknięcie drugiej, zatwierdzając ją po sukcesie wspólnego solvera. Graf dotkniętej składowej, usuwanie par z UI i ciągłość pozostają kolejnymi etapami.
+
+`Document::addParallel` waliduje parę przez `parallelError` i zapisuje ją bez uruchamiania solvera. Niezerowy błąd jest poprawnym wejściem do magazynu. Para jest nieuporządkowana: `(A, B)` i `(B, A)` są duplikatami, których dodanie zwraca `false`. Jedna krawędź może wystąpić w wielu różnych parach. `removeParallel` wyszukuje obie kolejności i usuwa wyłącznie wskazaną parę; brak pary zwraca `false`. Usuwanie nie wymaga poprawnej geometrii. Odczyt przez `getParallelConstraints` zwraca niemodyfikowalny span, który należy pobrać ponownie po zmianie magazynu lub podmianie dokumentu.
 
 ## Jeden układ zależności
 
@@ -43,6 +45,10 @@ Dla rozmiaru sceny z zadania proponujemy iteracyjny solver numeryczny z tłumien
 Na początku wystarczy niewielki moduł macierzy gęstych i rozwiązania układu liniowego z wyborem elementu głównego. Trzymamy go oddzielnie od geometrii i weryfikujemy na znanych układach. Gdy prototyp pokaże problemy kondycjonowania lub skali, można podmienić ten moduł na implementację QR/SVD bez zmiany dokumentu i API edytora.
 
 Tłumienie pomaga przy nadmiarowych równaniach, ale nie zastępuje weryfikacji wyniku. Minimalna korekta w pojedynczej iteracji ogranicza niepotrzebne ruchy; nie gwarantuje globalnie najbliższego rozwiązania. Nie dodajemy miękkiej kary za ruch do kryterium akceptacji kosztem niespełnionych relacji.
+
+W obecnym prototypie długości dzielimy przez wspólną skalę geometrii, a błędy równoległości pozostają bezwymiarowe. Tolerancja długości jest w jednostkach świata; `parallelTolerance` dotyczy bezwzględnej wartości znormalizowanego iloczynu wektorowego, czyli sinusa kąta. Przy nieudanej korekcie blisko prostopadłości solver może wykonać mały próbny ruch pojedynczej wolnej współrzędnej w obu kierunkach, ze zmniejszaniem kroku. Sinus ma w tym miejscu stacjonarne maksimum, więc sam Jacobian może dać zerowy krok. Próbę przyjmujemy wyłącznie przy spadku łącznej normy, zachowaniu skończonej geometrii i niezerowych krawędzi. Ruch liczy się do limitu iteracji, nie obejmuje prowadzonego punktu i nie zatwierdza dokumentu przed spełnieniem wszystkich relacji.
+
+Zerowy kierunek odcinka uczestniczącego w równoległości zwraca `DegenerateGeometry`; nieistniejące odwołania, relacja krawędzi z samą sobą, błędne parametry i przepełnienie wejściowych kierunków zwracają `InvalidInput`. Każdy sukces jest sprawdzany ponownie przed podmianą dokumentu. Niepowodzenie zachowuje pozycje, topologię i przechowywane relacje.
 
 Wynik: `Converged`, `InvalidInput`, `NoConvergence` lub `DegenerateGeometry`, wraz z resztami i identyfikatorami niespełnionych relacji. Brak zbieżności nie jest dowodem matematycznej sprzeczności układu.
 

@@ -68,8 +68,44 @@ namespace
             "Vertex position differs from the expected world position");
     }
 
+    void requireParallelStorage(const Document& actual, const Document& expected)
+    {
+        const auto a = actual.getParallelConstraints();
+        const auto b = expected.getParallelConstraints();
+        require(a.size() == b.size(), "Parallel relation count changed");
+        for (std::size_t i = 0; i < a.size(); ++i)
+            require(a[i].first == b[i].first && a[i].second == b[i].second, "Parallel relation changed");
+    }
+
+    void requireAllRelationsSatisfied(const Document& document)
+    {
+        require(document.validate().empty(), "Mixed edit left an invalid document");
+        requireLengthsSatisfied(document);
+        for (const auto& relation : document.getParallelConstraints())
+        {
+            const auto error = constraint::parallelError(document, relation);
+            require(error && std::abs(*error) <= 1e-6, "Session accepted an unsatisfied parallel relation");
+        }
+    }
+
+    Document parallelScene(bool withLengths)
+    {
+        Document document = scene();
+        const auto& first = document.getPolygons().begin()->second;
+        const auto& second = document.getPolygons().rbegin()->second;
+        // Opposite directions in one polygon and equal directions across polygons.
+        require(document.addParallel(first.edges[0], first.edges[2]), "Fixture parallel pair failed");
+        require(document.addParallel(second.edges[0], first.edges[0]), "Fixture cross-polygon pair failed");
+        if (withLengths)
+            for (const EdgeId edge : {first.edges[0], first.edges[1], second.edges[0]})
+                require(document.setFixedLength(edge, 20), "Fixture length failed");
+        requireAllRelationsSatisfied(document);
+        return document;
+    }
+
     void requireDocument(const Document& actual, const Document& expected, PolygonId translated = {}, Vec2 delta = {})
     {
+        requireParallelStorage(actual, expected);
         const auto actualLengths = actual.getFixedLengthConstraints();
         const auto expectedLengths = expected.getFixedLengthConstraints();
         require(actualLengths.size() == expectedLengths.size(), "Constraint count changed");
@@ -527,6 +563,134 @@ namespace
         requireDocument(f.session.document(), expected);
     }
 
+    void parallelOnlyDragPinsCursorAndAdaptsRelatedEdges()
+    {
+        const Document before = parallelScene(false);
+        EditorSession session{before};
+        const auto& first = before.getPolygons().begin()->second;
+        require(session.pointerDown({0, 0}, 0) && session.pointerMove({5, 10}), "Parallel-only drag failed");
+        requirePosition(session.document(), first.vertices[0], {5, 10});
+        requireAllRelationsSatisfied(session.document());
+        requireParallelStorage(session.document(), before);
+        // The second polygon's upper vertices are absent from every relation.
+        const auto& second = before.getPolygons().rbegin()->second;
+        for (const auto index : {2, 3})
+            requirePosition(session.document(), second.vertices[index], before.findVertex(second.vertices[index])->position);
+        const Document accepted = session.document();
+        session.pointerUp();
+        require(!session.cancelInteraction(), "Released parallel drag remained cancellable");
+        requireDocument(session.document(), accepted);
+    }
+
+    void mixedDragPreservesOffsetAndAllRelationsAcrossPreviews()
+    {
+        const Document before = parallelScene(true);
+        EditorSession session{before};
+        const VertexId dragged = before.getPolygons().begin()->second.vertices[0];
+        require(session.pointerDown({-2, 1}), "Mixed drag did not start");
+        for (const Vec2 cursor : {Vec2{3, 11}, Vec2{4, 12}, Vec2{5, 13}})
+        {
+            require(session.pointerMove(cursor), "Mixed preview failed");
+            requirePosition(session.document(), dragged, cursor + Vec2{2, -1});
+            requireAllRelationsSatisfied(session.document());
+            requireParallelStorage(session.document(), before);
+        }
+        const Document accepted = session.document();
+        session.pointerUp();
+        requireDocument(session.document(), accepted);
+    }
+
+    void rejectedMixedDragPreservesPreviewAndCanResumeOrCommit()
+    {
+        for (const bool resume : {false, true})
+        {
+            const Document initial = parallelScene(true);
+            EditorSession session{initial};
+            const auto& first = initial.getPolygons().begin()->second;
+            require(session.pointerDown({0, 0}, 0) && session.pointerMove({5, 10}), "Initial mixed move failed");
+            const Document accepted = session.document();
+            // Collapse a constrained direction in the candidate, after a successful preview.
+            const Vec2 neighbour = accepted.findVertex(first.vertices[1])->position;
+            require(!session.pointerMove(neighbour), "Degenerate parallel candidate was accepted");
+            requireDocument(session.document(), accepted);
+            require(session.isDragging() && session.selection().vertex == first.vertices[0], "Rejection lost the gesture");
+            if (resume)
+            {
+                require(session.pointerMove({6, 11}), "Mixed drag could not resume after rejection");
+                requirePosition(session.document(), first.vertices[0], {6, 11});
+                requireAllRelationsSatisfied(session.document());
+            }
+            const Document committed = session.document();
+            session.pointerUp();
+            require(!session.cancelInteraction(), "Released rejected gesture stayed active");
+            requireDocument(session.document(), committed);
+        }
+    }
+
+    void cancelAndEscapeRestoreMixedGeometryAndRelations()
+    {
+        for (const bool useEscape : {false, true})
+        {
+            const Document before = parallelScene(true);
+            EditorSession session{before};
+            require(session.pointerDown({0, 0}, 0) && session.pointerMove({5, 10}) && session.pointerMove({6, 11}),
+                "Mixed drag failed before cancellation");
+            if (useEscape) session.escape();
+            else require(session.cancelInteraction(), "Mixed cancellation failed");
+            require(!session.isDragging(), "Cancelled mixed drag stayed active");
+            requireDocument(session.document(), before);
+        }
+    }
+
+    void changingLengthSolvesParallelAndLengthRelationsTogether()
+    {
+        const Document before = parallelScene(true);
+        EditorSession session{before};
+        const auto& first = before.getPolygons().begin()->second;
+        require(session.selectAt({10, 0}, 0) && session.selection().edge == first.edges[0], "Mixed edge selection failed");
+        for (const double target : {30.0, 12.0})
+        {
+            require(session.setSelectedEdgeLength(target), "Mixed length update failed");
+            require(session.selectedFixedLength() == target && session.selection().edge == first.edges[0],
+                "Mixed update lost the target or edge selection");
+            require(session.document().getFixedLengthConstraints().size() == 3, "Mixed update duplicated a length");
+            requirePosition(session.document(), first.vertices[0], {0, 0});
+            requireAllRelationsSatisfied(session.document());
+            requireParallelStorage(session.document(), before);
+        }
+    }
+
+    void impossibleMixedLengthEditPreservesDocumentAndSelection()
+    {
+        Document document;
+        const std::array positions{Vec2{0, 0}, Vec2{20, 0}, Vec2{40, 0}};
+        const auto& polygon = *document.findPolygon(document.addPolygon(positions));
+        const EdgeId selected = polygon.edges[0];
+        require(document.setFixedLength(selected, 20) && document.setFixedLength(polygon.edges[1], 20) &&
+            document.setFixedLength(polygon.edges[2], 40), "Collinear length fixture failed");
+        require(document.addParallel(selected, polygon.edges[1]), "Collinear pair fixture failed");
+        requireAllRelationsSatisfied(document);
+        EditorSession session{document};
+        require(session.selectAt({10, 0}, 0) && session.selection().edge == selected, "Collinear edge selection failed");
+        // Lengths 30, 20, 40 form a triangle, but cannot be collinear as parallelism requires.
+        require(!session.setSelectedEdgeLength(30), "Conflicting mixed edit was accepted");
+        requireDocument(session.document(), document);
+        require(session.selection().edge == selected && session.selectedFixedLength() == 20,
+            "Rejected mixed edit lost selection or the previous target");
+    }
+
+    void polygonTranslationPreservesCrossPolygonParallelRelations()
+    {
+        const Document before = parallelScene(true);
+        EditorSession session{before};
+        const PolygonId first = before.getPolygons().begin()->first;
+        require(session.pointerDown({10, 10}, 0) && session.pointerMove({30, 40}), "Mixed polygon translation failed");
+        requireDocument(session.document(), before, first, {20, 30});
+        requireAllRelationsSatisfied(session.document());
+        require(session.cancelInteraction(), "Mixed polygon cancellation failed");
+        requireDocument(session.document(), before);
+    }
+
     void cancelledMotionPreservesCommittedTopology()
     {
         Fixture f;
@@ -545,6 +709,13 @@ namespace cad::tests
     std::span<const TestCase> editorSessionTests()
     {
         static const std::array tests{
+            TestCase{"parallel-only drag pins cursor and adapts related edges", parallelOnlyDragPinsCursorAndAdaptsRelatedEdges},
+            TestCase{"mixed drag preserves grab offset across previews", mixedDragPreservesOffsetAndAllRelationsAcrossPreviews},
+            TestCase{"rejected mixed drag preserves preview and resumes or commits", rejectedMixedDragPreservesPreviewAndCanResumeOrCommit},
+            TestCase{"cancel and Escape restore mixed geometry and relations", cancelAndEscapeRestoreMixedGeometryAndRelations},
+            TestCase{"length update solves lengths and parallelism together", changingLengthSolvesParallelAndLengthRelationsTogether},
+            TestCase{"impossible mixed length edit preserves document and selection", impossibleMixedLengthEditPreservesDocumentAndSelection},
+            TestCase{"polygon translation preserves cross-polygon parallelism", polygonTranslationPreservesCrossPolygonParallelRelations},
             TestCase{"empty session has no gesture or commands", emptySessionHasNoGestureOrCommands},
             TestCase{"selection priority, exclusivity and empty background", selectionPriorityAndClearing},
             TestCase{"context selection starts no drag", contextSelectionDoesNotStartDrag},

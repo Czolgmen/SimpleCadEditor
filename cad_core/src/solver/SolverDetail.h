@@ -26,6 +26,18 @@ namespace cad::solver::detail
 
     using JacobianBuilder = decltype(&computeJacobian);
 
+    // Rows: lengths, then parallels; baseErrors contain raw signed errors.
+    // Derivatives are with respect to normalized coordinates q = position / scale.
+    // Length residuals are divided by scale; parallel residuals are dimensionless.
+    // Samples leave document unchanged; invalid samples return nullopt.
+    std::optional<DenseMatrix> computeConstraintJacobian(
+        const Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        std::span<const VertexId> variableVertices,
+        std::span<const double> baseErrors,
+        double geometryScale);
+
     // Private injection point for testing the algorithm with supplied known matrices.
     SolveResult solveWithJacobian(
         Document& document,
@@ -33,4 +45,11 @@ namespace cad::solver::detail
         VertexId fixedVertex,
         const SolveOptions& options,
         JacobianBuilder buildJacobian);
+
+
+    std::optional<std::vector<double>> evaluateErrors(
+        const Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels
+    );
 }

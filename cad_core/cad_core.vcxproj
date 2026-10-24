@@ -75,6 +75,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="include\cad_core\constraints\FixedLengthConstraint.h" />
+    <ClInclude Include="include\cad_core\constraints\ParallelConstraint.h" />
     <ClInclude Include="include\cad_core\demo\DemoScene.hpp" />
     <ClInclude Include="include\cad_core\geometry\Vec2.h" />
     <ClInclude Include="include\cad_core\model\Id.h" />
@@ -89,6 +90,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\constraints\FixedLengthConstraint.cpp" />
+    <ClCompile Include="src\constraints\ParallelConstraint.cpp" />
     <ClCompile Include="src\demo\DemoScene.cpp" />
     <ClCompile Include="src\geometry\Vec2.cpp" />
     <ClCompile Include="src\model\Document.cpp" />

@@ -8,6 +8,7 @@
 #include <platform/win32/GdiRenderer.h>
 #include <platform/win32/LengthDialog.h>
 #include <cad_core/demo/DemoScene.hpp>
+#include <editor/HitTester.h>
 
 #include <windowsx.h>
 #include <optional>
@@ -168,6 +169,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto position = mouseWorldPosition(hWnd, lParam);
         if (!state || !position)
             return 0;
+        if (state->editor.pendingParallelEdge())
+        {
+            const auto second = cad::editor::hitTestEdge(state->editor.document(), *position, 6.0);
+            if (second && !state->editor.completeParallelSelection(*second))
+            {
+                state->editor.cancelParallelSelection();
+                MessageBoxW(hWnd,
+                    L"Nie udało się dodać równoległości. Para może już istnieć albo ograniczenia nie pozwalają dopasować geometrii. "
+                    L"Dokument nie został zmieniony. Możesz ponowić wybór z menu krawędzi.",
+                    L"Równoległość", MB_OK | MB_ICONWARNING);
+            }
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
         if (state->editor.pointerDown(*position))
         {
             SetCapture(hWnd);
@@ -267,6 +282,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
 
         state->editor.pointerUp();
+        state->editor.cancelParallelSelection();
         releaseMouseCapture(hWnd);
 
         InvalidateRect(hWnd, nullptr, FALSE);
@@ -281,12 +297,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const UINT deleteFlags = MF_STRING | (state->editor.canDeleteSelectedVertex() ? MF_ENABLED : MF_GRAYED);
         const UINT lengthFlags = MF_STRING | (state->editor.selectedEdgeLength() ? MF_ENABLED : MF_GRAYED);
         const UINT removeLengthFlags = MF_STRING | (state->editor.selectedFixedLength() ? MF_ENABLED : MF_GRAYED);
+        const auto edgeLength = state->editor.selectedEdgeLength();
+        const UINT parallelFlags = MF_STRING | (edgeLength && *edgeLength > 0.0 ? MF_ENABLED : MF_GRAYED);
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
             !AppendMenuW(menu, lengthFlags, IDM_SET_FIXED_LENGTH,
                 state->editor.selectedFixedLength() ? L"Zmień stałą długość..." : L"Ustaw stałą długość...") ||
-            !AppendMenuW(menu, removeLengthFlags, IDM_REMOVE_FIXED_LENGTH, L"Usuń ograniczenie długości"))
+            !AppendMenuW(menu, removeLengthFlags, IDM_REMOVE_FIXED_LENGTH, L"Usuń ograniczenie długości") ||
+            !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
+            !AppendMenuW(menu, parallelFlags, IDM_ADD_PARALLEL, L"Ustaw równoległość z..."))
         {
             DestroyMenu(menu);
             return 0;
@@ -306,6 +326,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
+            case IDM_ADD_PARALLEL:
+            {
+                auto* state = getAppState(hWnd);
+                if (!state)
+                    return 0;
+                state->editor.pointerUp();
+                releaseMouseCapture(hWnd);
+                if (state->editor.beginParallelSelection())
+                    InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             case IDM_SET_FIXED_LENGTH:
             {
                 auto* state = getAppState(hWnd);
@@ -444,7 +475,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         {
                             const auto& selection = state->editor.selection();
                             cad::win32::drawDocument(targetDc, state->editor.document(), clientRect,
-                                selection.vertex, selection.polygon, selection.edge);
+                                selection.vertex, selection.polygon, selection.edge, state->editor.pendingParallelEdge());
                         }
                     };
 

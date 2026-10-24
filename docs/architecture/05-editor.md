@@ -24,6 +24,8 @@ WinAPI pobiera wartość z dialogu długości i przekazuje gotową liczbę. Rdze
 
 Zaznaczenie dwóch krawędzi będących odcinkami umożliwia dodanie równoległości; mogą pochodzić z różnych wielokątów. Jeśli choć jedna jest Bézierem lub łukiem, polecenie jest niedostępne, a próba wywołania go przez API kończy się błędem walidacji. Po zmianie topologii sesja usuwa z zaznaczenia ID, które już nie istnieją.
 
+Obecny interfejs używa sekwencji PPM na pierwszej krawędzi → „Ustaw równoległość z...” → LPM na drugiej. Sesja przechowuje opcjonalny `pendingParallelEdge`, bez aktywnego przeciągania. Kandydat dokumentu otrzymuje parę i trafia do wspólnego solvera z początkiem pierwszej krawędzi zablokowanym. Sukces zatwierdza geometrię i relację; odrzucenie zachowuje dokument. Esc, utrata fokusu i otwarcie innego menu kończą wybór. Pomarańczowe podświetlenie oznacza pierwszą krawędź, a etykiety `P1`, `P2` itd. identyfikują pary na obu krawędziach.
+
 Konwersja odcinka na krzywą usuwa dotyczące go relacje długości i równoległości. Opis polecenia w UI informuje o tym skutku; po udanej operacji sesja odświeża listę relacji oraz zaznaczenie ich oznaczeń. Nie dodajemy osobnego dialogu potwierdzenia.
 
 ## Przepływ przeciągania
@@ -63,7 +65,7 @@ Wnętrze samoprzecinającego się wielokąta definiujemy regułą parzystości p
 | LPM na punkcie lub uchwycie + ruch | Przeciąganie wskazanego elementu |
 | LPM we wnętrzu wielokąta + ruch | Przesunięcie całego wielokąta |
 | LPM na krawędzi | Zaznaczenie krawędzi |
-| Ctrl + LPM na krawędzi | Dodanie/usunięcie krawędzi w zaznaczeniu, m.in. do pary relacji |
+| PPM na krawędzi → „Ustaw równoległość z...” → LPM | Dodanie równoległości z drugą wskazaną krawędzią |
 | PPM | Menu kontekstowe operacji dopuszczalnych dla wskazanego elementu |
 | Delete | Usunięcie zaznaczonego wierzchołka albo relacji; bez kasowania całych wielokątów |
 | Esc | Anulowanie gestu; poza gestem wyczyszczenie zaznaczenia |

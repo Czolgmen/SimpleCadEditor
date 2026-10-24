@@ -25,13 +25,22 @@
     <ClCompile Include="solver\ConstraintSolverTests.cpp">
       <Filter>solver</Filter>
     </ClCompile>
+    <ClCompile Include="solver\MixedConstraintSolverTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
     <ClCompile Include="solver\JacobianTests.cpp">
       <Filter>solver</Filter>
     </ClCompile>
     <ClCompile Include="constraints\FixedLengthConstraintTests.cpp">
       <Filter>constraints</Filter>
     </ClCompile>
+    <ClCompile Include="constraints\ParallelConstraintTests.cpp">
+      <Filter>constraints</Filter>
+    </ClCompile>
     <ClCompile Include="core\DocumentTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\DocumentParallelTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\DeleteVertexTests.cpp">
@@ -50,6 +59,9 @@
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\EditorSessionTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\EditorParallelTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\LengthInputTests.cpp">
