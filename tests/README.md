@@ -1,6 +1,6 @@
 # Testy rdzenia i edytora
 
-Projekt `cad_core_tests` jest programem konsolowym C++20 linkującym bibliotekę `cad_core` i kompilującym przenośny `src/editor/HitTester.cpp`. Nie wymaga pobierania zewnętrznego frameworka ani uruchamiania aplikacji WinAPI.
+Projekt `cad_core_tests` jest programem konsolowym C++20 linkującym bibliotekę `cad_core` i kompilującym przenośne `src/editor/HitTester.cpp` oraz `EditorSession.cpp`. Nie wymaga pobierania zewnętrznego frameworka ani uruchamiania aplikacji WinAPI.
 
 ## Uruchamianie
 
@@ -106,4 +106,13 @@ Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co
 
 Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu źródłowego, który jest nieconst. Testy nie symulują błędów alokacji pamięci.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia sześć zestawów i podaje wspólny wynik **130 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 21 przypadków wykonywanych bez okna i bibliotek Windows:
+
+- Priorytet i wyłączność zaznaczenia, kliknięcie tła, menu kontekstowe bez gestu i niemodyfikowalne wyniki odczytu.
+- Przeciąganie punktu z przesunięciem miejsca złapania i figury względem początku gestu, przy zachowaniu pozostałych obiektów.
+- Zatwierdzanie ruchu, anulowanie obu rodzajów gestu, Esc, bezpieczne późne anulowanie oraz niezależne migawki kolejnych gestów.
+- Odrzucanie błędnych współrzędnych i tolerancji bez utraty gestu, kontynuowanie po odrzuconym wejściu i zachowanie ostatniego poprawnego podglądu.
+- Podział i usuwanie z właściwym zaznaczeniem i dostępnością poleceń, ochronę trójkąta oraz polecenia i zmianę zaznaczenia w trakcie ruchu.
+- Zachowanie zatwierdzonej topologii po anulowaniu późniejszego przeciągania.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia siedem zestawów i podaje wspólny wynik **151 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

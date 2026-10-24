@@ -14,7 +14,7 @@ Pliki należą do projektu aplikacji `Projecr1_GK`, a nie biblioteki `cad_core`.
 ## Odpowiedzialności
 
 - `GdiRenderer.h/.cpp`: `cad::win32::drawDocument` rysuje krawędzie i znaczniki wierzchołków oraz wyróżnia przekazane ID zaznaczonego wierzchołka, krawędzi lub wielokąta. `worldToScreen` przelicza współrzędne świata na ekran, ze skalą 1:1, marginesem i odwróconą osią Y.
-- `AppState.h`: posiada dokument sceny, bufor obrazu oraz stan zaznaczenia i przeciągania. Stan powstaje raz w `wWinMain`, a wskaźnik jest przekazywany do okna przez `WM_NCCREATE` i przechowywany w `GWLP_USERDATA`.
+- `AppState.h`: posiada przenośną [`EditorSession`](../../editor/README.md) oraz bufor obrazu. Sesja posiada dokument, zaznaczenie i stan gestu. Stan aplikacji powstaje raz w `wWinMain`, a wskaźnik jest przekazywany do okna przez `WM_NCCREATE` i przechowywany w `GWLP_USERDATA`.
 - `BackBuffer.h/.cpp`: posiada pamięciowy DC i odgórny, 32-bitowy `DIBSection`. Automatycznie przywraca poprzednią bitmapę DC i zwalnia swoje zasoby. Kopiowanie i przenoszenie tego właściciela uchwytów są wyłączone.
 
 Przykład dołączania nagłówka z kodu aplikacji:
@@ -23,17 +23,23 @@ Przykład dołączania nagłówka z kodu aplikacji:
 #include <platform/win32/GdiRenderer.h>
 ```
 
+## Obsługa gestów
+
+`WndProc` przelicza współrzędne myszy na świat i przekazuje je do `EditorSession::pointerDown`, `pointerMove` i `pointerUp`. Przechwycenie myszy należy do adaptera WinAPI. Puszczenie przycisku przekazuje też ostatnią pozycję kursora, kończy gest i dopiero potem zwalnia przechwycenie.
+
+Esc anuluje ruch do stanu sprzed gestu; poza gestem usuwa zaznaczenie. Nieoczekiwane `WM_CAPTURECHANGED`, `WM_CANCELMODE`, utrata fokusu i minimalizacja również anulują gest. Zwykłe `ReleaseCapture` po zatwierdzeniu nie wycofuje zmian. Rysowanie odczytuje dokument i zaznaczenie z sesji.
+
 ## Podział krawędzi
 
 Kliknięcie PPM w obszarze rysowania wskazuje element w kolejności: wierzchołek, krawędź, wnętrze wielokąta. Otwiera menu kontekstowe z poleceniem „Podziel krawędź”, aktywnym dla zaznaczonej krawędzi. PPM na pustym tle usuwa zaznaczenie i pokazuje nieaktywne polecenie. Shift+F10 otwiera menu dla bieżącego zaznaczenia bez zmiany wskazanego elementu.
 
-Polecenie wywołuje `Document::splitEdge`. Po sukcesie czyści stan gestu, zaznacza nowy wierzchołek i zleca przerysowanie. Podział następuje w połowie boku, niezależnie od miejsca kliknięcia na nim. Utworzone menu jest zwalniane przez `DestroyMenu` po jego zamknięciu.
+Polecenie wywołuje `EditorSession::splitSelectedEdge`, która korzysta z `Document::splitEdge`. Po sukcesie sesja kończy gest i zaznacza nowy wierzchołek, a adapter zwalnia przechwycenie myszy i zleca przerysowanie. Podział następuje w połowie boku, niezależnie od miejsca kliknięcia na nim. Utworzone menu jest zwalniane przez `DestroyMenu` po jego zamknięciu.
 
 ## Usuwanie wierzchołka
 
 Zaznaczony wierzchołek można usunąć klawiszem Delete albo poleceniem „Usuń wierzchołek” w menu PPM. Polecenie jest aktywne dla wierzchołka figury mającej więcej niż trzy punkty. Delete przy innym zaznaczeniu lub na trójkącie nie zmienia dokumentu; pozycja menu jest wtedy nieaktywna.
 
-`Document::deleteVertex` usuwa punkt i obie dochodzące krawędzie, łączy sąsiadów nowym odcinkiem i zachowuje kolejność pozostałych elementów. Po sukcesie aplikacja zwalnia przechwycenie myszy, czyści zaznaczenie oraz gest i zleca przerysowanie.
+Adapter wywołuje `EditorSession::deleteSelectedVertex`. Sesja korzysta z `Document::deleteVertex`, które usuwa punkt i obie dochodzące krawędzie, łączy sąsiadów nowym odcinkiem i zachowuje kolejność pozostałych elementów. Po sukcesie sesja czyści zaznaczenie i kończy gest, a adapter zwalnia przechwycenie myszy i zleca przerysowanie.
 
 ## Przebieg odmalowania
 

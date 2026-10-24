@@ -27,6 +27,8 @@ Strzałka oznacza zależność kodu. `cad_core` nie zależy od żadnej pozostał
 
 ## Granice API
 
+Obecna implementacja sesji jest w [`src/editor`](../../src/editor/README.md). Przyjmuje pozycje i tolerancję w jednostkach świata, obsługuje zaznaczenie, gesty, Esc i dwa polecenia topologii. Jest kompilowana w aplikacji i testach bez zależności od Windows; osobna biblioteka `cad_editor` oraz opisane niżej `PointerEvent`, `EditCommand` i `EditorView` pozostają docelowymi rozszerzeniami.
+
 Rdzeń udostępnia dane geometryczne i wyniki operacji, np. `Document`, `Vec2`, `EdgeId`, `SolveResult`. Nie przyjmuje `POINT`, `RECT`, `COLORREF` ani struktur komunikatów systemowych. Nagłówka `framework.h` używamy wyłącznie w kodzie Windows.
 
 Edytor udostępnia mały zestaw operacji:

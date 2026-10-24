@@ -1,10 +1,10 @@
 # Architektura edytora wielokątów
 
-Status: plan do realizacji, bez zmian w kodzie aplikacji.
+Status: plan realizowany etapami. Działają model i walidacja, scena demonstracyjna, renderer GDI z buforem oraz wybór, przeciąganie, podział i usuwanie elementów. Przenośna [`EditorSession`](../../src/editor/README.md) obsługuje edycję i anulowanie gestów. Solver, krzywe i własna rasteryzacja pozostają kolejnymi etapami.
 
 Podstawa: [treść zadania](../instuction.md). Wybrany wariant **A–K**: relacja równoległości dwóch krawędzi i domyślna ciągłość **G1** po włączeniu segmentu Béziera. Użytkownik nadal może jawnie wybrać G0, G1 lub C1 w miejscach dopuszczonych przez zadanie.
 
-Stack: **C++20 + WinAPI + GDI**, z rdzeniem geometrii i mechanizmem edycji niezależnymi od Windows. Obecny projekt ma już ustawiony C++20; jego kod jest na etapie szablonu okna WinAPI.
+Stack: **C++20 + WinAPI + GDI**, z rdzeniem geometrii i mechanizmem edycji niezależnymi od Windows. Dokumenty opisują także docelowe moduły i API, które nie są jeszcze wdrożone.
 
 ## Dokumenty
 

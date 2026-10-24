@@ -21,7 +21,8 @@ int main()
         TestSuite{"Validation", cad::tests::validationTests()},
         TestSuite{"HitTester", cad::tests::hitTesterTests()},
         TestSuite{"SplitEdge", cad::tests::splitEdgeTests()},
-        TestSuite{"DeleteVertex", cad::tests::deleteVertexTests()}
+        TestSuite{"DeleteVertex", cad::tests::deleteVertexTests()},
+        TestSuite{"EditorSession", cad::tests::editorSessionTests()}
     };
 
     std::size_t total = 0;

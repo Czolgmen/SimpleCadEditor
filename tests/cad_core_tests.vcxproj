@@ -88,11 +88,16 @@
     <ClCompile Include="core\ValidationTests.cpp" />
     <ClCompile Include="geometry\Vec2Tests.cpp" />
     <ClCompile Include="editor\HitTesterTests.cpp" />
+    <ClCompile Include="editor\EditorSessionTests.cpp" />
     <ClCompile Include="..\src\editor\HitTester.cpp" />
+    <ClCompile Include="..\src\editor\EditorSession.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
     <ClInclude Include="..\src\editor\HitTester.h" />
+    <ClInclude Include="..\src\editor\EditorSession.h" />
+    <ClInclude Include="..\src\editor\DragState.h" />
+    <ClInclude Include="..\src\editor\Selection.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />

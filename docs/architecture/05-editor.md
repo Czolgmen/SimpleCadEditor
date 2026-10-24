@@ -4,6 +4,8 @@
 
 ## Sesja edytora
 
+Aktualna [`EditorSession`](../../src/editor/README.md) posiada dokument, zaznaczenie i opcjonalną transakcję z wariantem przeciągania punktu albo wielokąta. Udostępnia operacje wskaźnika w jednostkach świata, anulowanie, obsługę Esc, podział i usuwanie. Dalszy opis uwzględnia przyszłe uchwyty krzywych, solver, kamerę i zestaw poleceń.
+
 `EditorSession` łączy dokument i jego operacje z neutralnym stanem interakcji:
 
 - `Selection`: wskazane wierzchołki, uchwyty, krawędzie, wielokąty lub ograniczenia.

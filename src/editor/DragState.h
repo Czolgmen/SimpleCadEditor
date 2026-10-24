@@ -3,14 +3,21 @@
 #include <cad_core/geometry/Vec2.h>
 #include <cad_core/model/Id.h>
 
-#include <optional>
+#include <variant>
 
 namespace cad::editor
 {
-    struct DragState {
-        std::optional<cad::VertexId> vertex;
+    struct DraggingVertex
+    {
+        cad::VertexId vertex;
         cad::Vec2 grabOffset{};
-        std::optional<cad::PolygonId> polygon;
-        cad::Vec2 previousWorldPosition{};
     };
+
+    struct DraggingPolygon
+    {
+        cad::PolygonId polygon;
+        cad::Vec2 pointerOrigin{};
+    };
+
+    using DragState = std::variant<DraggingVertex, DraggingPolygon>;
 } // namespace cad::editor

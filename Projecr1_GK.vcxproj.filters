@@ -30,6 +30,15 @@
     <ClInclude Include="src\editor\HitTester.h">
       <Filter>src\editor</Filter>
     </ClInclude>
+    <ClInclude Include="src\editor\EditorSession.h">
+      <Filter>src\editor</Filter>
+    </ClInclude>
+    <ClInclude Include="src\editor\DragState.h">
+      <Filter>src\editor</Filter>
+    </ClInclude>
+    <ClInclude Include="src\editor\Selection.h">
+      <Filter>src\editor</Filter>
+    </ClInclude>
     <ClInclude Include="framework.h">
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
@@ -56,6 +65,9 @@
     <ClCompile Include="src\editor\HitTester.cpp">
       <Filter>src\editor</Filter>
     </ClCompile>
+    <ClCompile Include="src\editor\EditorSession.cpp">
+      <Filter>src\editor</Filter>
+    </ClCompile>
     <ClCompile Include="Projecr1_GK.cpp">
       <Filter>Pliki źródłowe</Filter>
     </ClCompile>
@@ -69,6 +81,9 @@
   <ItemGroup>
     <None Include="src\platform\win32\README.md">
       <Filter>src\platform\win32</Filter>
+    </None>
+    <None Include="src\editor\README.md">
+      <Filter>src\editor</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

@@ -31,13 +31,28 @@
     <ClCompile Include="editor\HitTesterTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
+    <ClCompile Include="editor\EditorSessionTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\editor\HitTester.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\editor\EditorSession.cpp">
       <Filter>editor</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
     <ClInclude Include="..\src\editor\HitTester.h">
+      <Filter>editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\editor\EditorSession.h">
+      <Filter>editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\editor\DragState.h">
+      <Filter>editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\editor\Selection.h">
       <Filter>editor</Filter>
     </ClInclude>
   </ItemGroup>

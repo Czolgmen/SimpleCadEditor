@@ -7,10 +7,9 @@
 #include <platform/win32/AppState.h>
 #include <platform/win32/GdiRenderer.h>
 #include <cad_core/demo/DemoScene.hpp>
-#include <editor/HitTester.h>
 
 #include <windowsx.h>
-#include <algorithm>
+#include <optional>
 
 
 #define MAX_LOADSTRING 100
@@ -28,17 +27,29 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 namespace
 {
-    bool canDeleteSelectedVertex(const cad::win32::AppState& state)
+    cad::win32::AppState* getAppState(HWND window)
     {
-        if (!state.selection.vertex || !state.document.findVertex(*state.selection.vertex))
-            return false;
-        for (const auto& [id, polygon] : state.document.getPolygons())
-        {
-            if (std::find(polygon.vertices.begin(), polygon.vertices.end(), *state.selection.vertex) !=
-                polygon.vertices.end())
-                return polygon.vertices.size() > 3;
-        }
-        return false;
+        return reinterpret_cast<cad::win32::AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    }
+
+    cad::Vec2 clientToWorld(const POINT& point, const RECT& clientRect)
+    {
+        return {static_cast<double>(point.x - clientRect.left - 20),
+                static_cast<double>(clientRect.bottom - 20 - point.y)};
+    }
+
+    std::optional<cad::Vec2> mouseWorldPosition(HWND window, LPARAM position)
+    {
+        RECT clientRect{};
+        if (!GetClientRect(window, &clientRect))
+            return std::nullopt;
+        return clientToWorld(POINT{GET_X_LPARAM(position), GET_Y_LPARAM(position)}, clientRect);
+    }
+
+    void releaseMouseCapture(HWND window)
+    {
+        if (GetCapture() == window)
+            ReleaseCapture();
     }
 }
 
@@ -50,7 +61,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
     // TODO: W tym miejscu umieść kod.
-    cad::win32::AppState appState{cad::createDemoScene()};
+    cad::win32::AppState appState{cad::editor::EditorSession{cad::createDemoScene()}};
 
     // Inicjuj ciągi globalne
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -152,122 +163,75 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
     case WM_LBUTTONDOWN:
     {
-        auto* state = reinterpret_cast<cad::win32::AppState*>(
-                GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-
-        if (!state)
+        auto* state = getAppState(hWnd);
+        const auto position = mouseWorldPosition(hWnd, lParam);
+        if (!state || !position)
             return 0;
-
-        int x = GET_X_LPARAM(lParam);
-        int y = GET_Y_LPARAM(lParam);
-
-        RECT clientRect{};
-        GetClientRect(hWnd, &clientRect);
-
-        const cad::Vec2 worldPosition{
-            static_cast<double>(x - 20),
-            static_cast<double>(clientRect.bottom - 20 - y)
-        };
-
-
-        state->selection = {};
-        state->drag = {};
-
-        state->selection.vertex = cad::editor::hitTestVertex(state->document, worldPosition, 6.0);
-
-        state->drag.vertex.reset();
-        
-
-        if (state->selection.vertex)
+        if (state->editor.pointerDown(*position))
         {
-            const auto* vertex = state->document.findVertex(*state->selection.vertex);
-
-            if (vertex)
-            {
-                state->drag.vertex = vertex->id;
-                state->drag.grabOffset = vertex->position - worldPosition;
-                SetCapture(hWnd);
-            }
-        } else if ((state->selection.edge = cad::editor::hitTestEdge(state->document, worldPosition, 6.0))) 
-        {
-        } else
-        {
-            state->selection.polygon =
-                cad::editor::hitTestPolygon(state->document, worldPosition);
-        
-            if (state->selection.polygon)
-            {
-                state->drag.polygon = state->selection.polygon;
-                state->drag.previousWorldPosition = worldPosition;
-                SetCapture(hWnd);
-            }
+            SetCapture(hWnd);
+            if (GetCapture() != hWnd)
+                state->editor.cancelInteraction();
         }
-
+        else
+        {
+            releaseMouseCapture(hWnd);
+        }
         InvalidateRect(hWnd, nullptr, FALSE);
-
         return 0;
-        break;
     }
     case WM_MOUSEMOVE:
     {
-        auto* state = reinterpret_cast<cad::win32::AppState*>(
-            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-
-        if (!state || (!state->drag.vertex && !state->drag.polygon))
+        auto* state = getAppState(hWnd);
+        if (!state || !state->editor.isDragging())
             return 0;
-
-        RECT clientRect{};
-        if (!GetClientRect(hWnd, &clientRect))
-            return 0;
-
-        const cad::Vec2 worldPosition{
-            static_cast<double>(GET_X_LPARAM(lParam) - 20),
-            static_cast<double>(
-                clientRect.bottom - 20 - GET_Y_LPARAM(lParam))
-        };
-
-        bool moved = false;
-
-        if (state->drag.vertex)
-        {
-            const cad::Vec2 newPosition =
-                worldPosition + state->drag.grabOffset;
-        
-            moved = state->document.moveVertex(
-                *state->drag.vertex, newPosition);
-        }
-        else if (state->drag.polygon)
-        {
-            const cad::Vec2 delta =
-                worldPosition - state->drag.previousWorldPosition;
-        
-            moved = state->document.movePolygon(
-                *state->drag.polygon, delta);
-            
-            if (moved)
-                state->drag.previousWorldPosition = worldPosition;
-        }
-
-        if (moved)
+        const auto position = mouseWorldPosition(hWnd, lParam);
+        if (position && state->editor.pointerMove(*position))
             InvalidateRect(hWnd, nullptr, FALSE);
-
         return 0;
     }
     case WM_LBUTTONUP:
+    {
+        auto* state = getAppState(hWnd);
+        if (state)
+        {
+            if (state->editor.isDragging())
+            {
+                if (const auto position = mouseWorldPosition(hWnd, lParam))
+                    state->editor.pointerMove(*position);
+            }
+            // Finish before ReleaseCapture sends WM_CAPTURECHANGED.
+            state->editor.pointerUp();
+            InvalidateRect(hWnd, nullptr, FALSE);
+        }
+        releaseMouseCapture(hWnd);
+        return 0;
+    }
     case WM_CAPTURECHANGED:
     {
-        auto* state = reinterpret_cast<cad::win32::AppState*>(
-            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-
-        if (state)
-            state->drag = {};
-
-        if (message == WM_LBUTTONUP && GetCapture() == hWnd)
-            ReleaseCapture();
-
+        auto* state = getAppState(hWnd);
+        if (state && state->editor.cancelInteraction())
+            InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+    }
+    case WM_CANCELMODE:
+    case WM_KILLFOCUS:
+    {
+        auto* state = getAppState(hWnd);
+        if (state && state->editor.cancelInteraction())
+            InvalidateRect(hWnd, nullptr, FALSE);
+        releaseMouseCapture(hWnd);
         return 0;
     }
     case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE)
+        {
+            if (auto* state = getAppState(hWnd))
+                state->editor.escape();
+            releaseMouseCapture(hWnd);
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
         if (wParam == VK_DELETE)
         {
             SendMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDM_DELETE_VERTEX, 0), 0);
@@ -276,8 +240,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return DefWindowProcW(hWnd, message, wParam, lParam);
     case WM_CONTEXTMENU:
     {
-        auto* state = reinterpret_cast<cad::win32::AppState*>(
-            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        auto* state = getAppState(hWnd);
         RECT clientRect{};
         if (!state || !GetClientRect(hWnd, &clientRect))
             return 0;
@@ -299,23 +262,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (!ScreenToClient(hWnd, &clientPosition) || !PtInRect(&clientRect, clientPosition))
                 return DefWindowProcW(hWnd, message, wParam, lParam);
 
-            const cad::Vec2 worldPosition{
-                static_cast<double>(clientPosition.x - 20),
-                static_cast<double>(clientRect.bottom - 20 - clientPosition.y)};
-
-            state->selection = {};
-            state->selection.vertex = cad::editor::hitTestVertex(state->document, worldPosition, 6.0);
-            if (!state->selection.vertex)
-            {
-                state->selection.edge = cad::editor::hitTestEdge(state->document, worldPosition, 6.0);
-                if (!state->selection.edge)
-                    state->selection.polygon = cad::editor::hitTestPolygon(state->document, worldPosition);
-            }
+            state->editor.selectAt(clientToWorld(clientPosition, clientRect));
         }
 
-        state->drag = {};
-        if (GetCapture() == hWnd)
-            ReleaseCapture();
+        state->editor.pointerUp();
+        releaseMouseCapture(hWnd);
 
         InvalidateRect(hWnd, nullptr, FALSE);
         UpdateWindow(hWnd);
@@ -324,10 +275,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (!menu)
             return 0;
 
-        const bool canSplit = state->selection.edge &&
-            state->document.findEdge(*state->selection.edge);
+        const bool canSplit = state->editor.canSplitSelectedEdge();
         const UINT flags = MF_STRING | (canSplit ? MF_ENABLED : MF_GRAYED);
-        const UINT deleteFlags = MF_STRING | (canDeleteSelectedVertex(*state) ? MF_ENABLED : MF_GRAYED);
+        const UINT deleteFlags = MF_STRING | (state->editor.canDeleteSelectedVertex() ? MF_ENABLED : MF_GRAYED);
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete"))
         {
@@ -351,45 +301,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
             case IDM_DELETE_VERTEX:
             {
-                auto* state = reinterpret_cast<cad::win32::AppState*>(
-                    GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-                if (!state || !canDeleteSelectedVertex(*state))
+                auto* state = getAppState(hWnd);
+                if (!state || !state->editor.canDeleteSelectedVertex())
                     return 0;
 
-                if (!state->document.deleteVertex(*state->selection.vertex))
+                if (!state->editor.deleteSelectedVertex())
                 {
                     MessageBoxW(hWnd, L"Nie udało się usunąć wybranego wierzchołka.",
                         L"Usuwanie wierzchołka", MB_OK | MB_ICONWARNING);
                     return 0;
                 }
 
-                state->drag = {};
-                if (GetCapture() == hWnd)
-                    ReleaseCapture();
-                state->selection = {};
+                releaseMouseCapture(hWnd);
                 InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
             case IDM_SPLIT_EDGE:
             {
-                auto* state = reinterpret_cast<cad::win32::AppState*>(
-                    GetWindowLongPtrW(hWnd, GWLP_USERDATA));
-                if (!state || !state->selection.edge)
+                auto* state = getAppState(hWnd);
+                if (!state || !state->editor.canSplitSelectedEdge())
                     return 0;
 
-                const auto vertexId = state->document.splitEdge(*state->selection.edge);
-                if (!vertexId)
+                if (!state->editor.splitSelectedEdge())
                 {
                     MessageBoxW(hWnd, L"Nie udało się podzielić wybranej krawędzi.",
                         L"Podział krawędzi", MB_OK | MB_ICONWARNING);
                     return 0;
                 }
 
-                state->drag = {};
-                if (GetCapture() == hWnd)
-                    ReleaseCapture();
-                state->selection = {};
-                state->selection.vertex = vertexId;
+                releaseMouseCapture(hWnd);
                 InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
@@ -427,7 +367,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (wParam == SIZE_MINIMIZED)
             {
                 if (state)
+                {
+                    state->editor.cancelInteraction();
+                    releaseMouseCapture(hWnd);
                     state->backBuffer.reset();
+                }
             }
             else
             {
@@ -459,7 +403,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     {
                         FillRect(targetDc, &clientRect, GetSysColorBrush(COLOR_WINDOW));
                         if (state)
-                            cad::win32::drawDocument(targetDc, state->document, clientRect, state->selection.vertex, state->selection.polygon, state->selection.edge);
+                        {
+                            const auto& selection = state->editor.selection();
+                            cad::win32::drawDocument(targetDc, state->editor.document(), clientRect,
+                                selection.vertex, selection.polygon, selection.edge);
+                        }
                     };
 
                     if (state && state->backBuffer.resize(dc, width, height))
@@ -487,7 +435,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             auto* state = reinterpret_cast<cad::win32::AppState*>(
                 GetWindowLongPtrW(hWnd, GWLP_USERDATA));
             if (state)
+            {
+                state->editor.cancelInteraction();
                 state->backBuffer.reset();
+            }
 
             SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0);
             return DefWindowProcW(hWnd, message, wParam, lParam);
