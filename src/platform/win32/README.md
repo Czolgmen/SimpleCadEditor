@@ -52,6 +52,20 @@ Dialog domyślnie podaje aktualną długość geometryczną krawędzi. Akceptuje
 
 Aktywną relację oznacza zielona etykieta `L=...` przy środku krawędzi. Renderer przywraca poprzednią czcionkę, kolor tekstu i tryb tła DC. Usunięcie relacji usuwa etykietę i pozostawia geometrię; podział krawędzi lub usunięcie wierzchołka czyści relacje zmienionych krawędzi. Przeciąganie końca odcinka uruchamia solver, zachowując prowadzony punkt pod kursorem. Przy odrzuconym ruchu pozostaje ostatni poprawny podgląd.
 
+## Równoległość krawędzi
+
+PPM na krawędzi → „Ustaw równoległość z...” rozpoczyna wybór drugiej krawędzi przez LPM. Pierwsza jest pomarańczowa; Esc, PPM lub utrata fokusu anulują wybór. Zatwierdzenie przez `EditorSession` dodaje parę dopiero po sukcesie wspólnego solvera. Obie krawędzie dostają wspólne oznaczenie `P1`, `P2` itd.
+
+Podmenu „Usuń równoległość” zawiera wyłącznie pary wskazanej krawędzi, oznaczone tymi samymi numerami co na scenie. Brak relacji oznacza nieaktywne polecenie. Można otworzyć menu przez PPM na dowolnej krawędzi pary albo Shift+F10 dla bieżącego zaznaczenia. Adapter zapamiętuje ID drugich krawędzi na czas otwarcia menu i przekazuje wybraną do `removeSelectedEdgeParallel`. Dynamiczne identyfikatory pozycji są obsługiwane bezpośrednio po `TrackPopupMenu`, przed 16-bitowym pakowaniem `WM_COMMAND`. Rodzic zwalnia podmenu przy `DestroyMenu`.
+
+Usunięcie jednej pary nie uruchamia solvera, nie przesuwa punktów i zachowuje długości oraz pozostałe pary. Przerysowanie usuwa jej oznaczenia i odświeża numerację ocalałych relacji.
+
+## Powiadomienie o odrzuconym ruchu
+
+Jeśli sesja odrzuci położenie podczas przeciągania, adapter pokazuje na dole sceny nieblokujący pasek: „Nie udało się uzyskać spójnego stanu. Zachowano ostatni poprawny stan. Spróbuj innego położenia.” Nie otwiera dialogu i nie zwalnia przechwycenia myszy, więc można kontynuować ruch. Poprawny podgląd usuwa powiadomienie. Przy puszczeniu przycisku na odrzuconym położeniu pasek pozostaje widoczny; znika po rozpoczęciu następnej operacji, Esc lub anulowaniu. Utrata fokusu i przechwycenia podczas gestu również go usuwa.
+
+Stan powiadomienia należy do `AppState`; rdzeń i przenośna sesja nie znają komunikatu ani GDI. Pasek jest rysowany po geometrii do tego samego bufora, z przywróceniem ustawień DC. Nieudane dodanie równoległości lub ustawienie długości nadal używa pojedynczego dialogu z informacją o zachowaniu dokumentu.
+
 ## Przebieg odmalowania
 
 Punkt wejścia i procedura okna są w `Projecr1_GK.cpp`. `WM_PAINT`, pomiędzy `BeginPaint` i `EndPaint`:

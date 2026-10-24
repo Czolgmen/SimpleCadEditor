@@ -9,6 +9,7 @@ namespace cad::win32
     {
         cad::editor::EditorSession editor;
         BackBuffer backBuffer{};
+        bool showConsistencyWarning = false;
     };
     
 

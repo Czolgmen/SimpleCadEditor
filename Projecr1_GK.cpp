@@ -11,7 +11,10 @@
 #include <editor/HitTester.h>
 
 #include <windowsx.h>
+#include <algorithm>
 #include <optional>
+#include <string>
+#include <vector>
 
 
 #define MAX_LOADSTRING 100
@@ -29,6 +32,67 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 namespace
 {
+    // These IDs are handled directly after TrackPopupMenu, before WM_COMMAND's 16-bit packing.
+    constexpr UINT parallelRemovalCommandBase = 0x10000;
+
+    void drawConsistencyWarning(HDC dc, const RECT& clientRect)
+    {
+        const int saved = SaveDC(dc);
+        if (!saved)
+            return;
+        RECT banner{clientRect.left + 8, (std::max)(clientRect.top + 8, clientRect.bottom - 72),
+            clientRect.right - 8, clientRect.bottom - 8};
+        SetDCBrushColor(dc, RGB(255, 240, 205));
+        FillRect(dc, &banner, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        InflateRect(&banner, -10, -8);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(130, 55, 0));
+        SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+        DrawTextW(dc,
+            L"Nie udało się uzyskać spójnego stanu. Zachowano ostatni poprawny stan. "
+            L"Spróbuj innego położenia.",
+            -1, &banner, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+        RestoreDC(dc, saved);
+    }
+
+    bool appendParallelRemovalMenu(HMENU menu, const cad::editor::EditorSession& editor,
+        std::vector<cad::EdgeId>& targets)
+    {
+        const auto selected = editor.selection().edge;
+        if (!selected)
+            return AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Usuń równoległość") != FALSE;
+
+        HMENU submenu = CreatePopupMenu();
+        if (!submenu)
+            return false;
+        std::size_t number = 0;
+        for (const auto& pair : editor.document().getParallelConstraints())
+        {
+            ++number;
+            if (pair.first != *selected && pair.second != *selected)
+                continue;
+            const UINT command = parallelRemovalCommandBase + static_cast<UINT>(targets.size());
+            targets.push_back(pair.first == *selected ? pair.second : pair.first);
+            const auto label = L"P" + std::to_wstring(number);
+            if (!AppendMenuW(submenu, MF_STRING, command, label.c_str()))
+            {
+                DestroyMenu(submenu);
+                return false;
+            }
+        }
+        if (targets.empty())
+        {
+            DestroyMenu(submenu);
+            return AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Usuń równoległość") != FALSE;
+        }
+        if (!AppendMenuW(menu, MF_STRING | MF_POPUP, reinterpret_cast<UINT_PTR>(submenu), L"Usuń równoległość"))
+        {
+            DestroyMenu(submenu);
+            return false;
+        }
+        return true; // The parent menu now owns the submenu.
+    }
+
     cad::win32::AppState* getAppState(HWND window)
     {
         return reinterpret_cast<cad::win32::AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
@@ -169,6 +233,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto position = mouseWorldPosition(hWnd, lParam);
         if (!state || !position)
             return 0;
+        state->showConsistencyWarning = false;
         if (state->editor.pendingParallelEdge())
         {
             const auto second = cad::editor::hitTestEdge(state->editor.document(), *position, 6.0);
@@ -176,7 +241,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 state->editor.cancelParallelSelection();
                 MessageBoxW(hWnd,
-                    L"Nie udało się dodać równoległości. Para może już istnieć albo ograniczenia nie pozwalają dopasować geometrii. "
+                    L"Nie udało się uzyskać spójnego stanu dla tej operacji. Para może już istnieć albo ograniczenia nie pozwalają dopasować geometrii. "
                     L"Dokument nie został zmieniony. Możesz ponowić wybór z menu krawędzi.",
                     L"Równoległość", MB_OK | MB_ICONWARNING);
             }
@@ -202,8 +267,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (!state || !state->editor.isDragging())
             return 0;
         const auto position = mouseWorldPosition(hWnd, lParam);
-        if (position && state->editor.pointerMove(*position))
-            InvalidateRect(hWnd, nullptr, FALSE);
+        if (position)
+        {
+            const bool accepted = state->editor.pointerMove(*position);
+            const bool warningChanged = state->showConsistencyWarning != !accepted;
+            state->showConsistencyWarning = !accepted;
+            if (accepted || warningChanged)
+                InvalidateRect(hWnd, nullptr, FALSE);
+        }
         return 0;
     }
     case WM_LBUTTONUP:
@@ -214,7 +285,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (state->editor.isDragging())
             {
                 if (const auto position = mouseWorldPosition(hWnd, lParam))
-                    state->editor.pointerMove(*position);
+                    state->showConsistencyWarning = !state->editor.pointerMove(*position);
             }
             // Finish before ReleaseCapture sends WM_CAPTURECHANGED.
             state->editor.pointerUp();
@@ -227,15 +298,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         auto* state = getAppState(hWnd);
         if (state && state->editor.cancelInteraction())
+        {
+            state->showConsistencyWarning = false;
             InvalidateRect(hWnd, nullptr, FALSE);
+        }
         return 0;
     }
     case WM_CANCELMODE:
     case WM_KILLFOCUS:
     {
         auto* state = getAppState(hWnd);
-        if (state && state->editor.cancelInteraction())
-            InvalidateRect(hWnd, nullptr, FALSE);
+        if (state)
+        {
+            const bool cancelled = state->editor.cancelInteraction();
+            const bool wasShowing = state->showConsistencyWarning;
+            state->showConsistencyWarning = false;
+            if (cancelled || wasShowing)
+                InvalidateRect(hWnd, nullptr, FALSE);
+        }
         releaseMouseCapture(hWnd);
         return 0;
     }
@@ -243,7 +323,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (wParam == VK_ESCAPE)
         {
             if (auto* state = getAppState(hWnd))
+            {
                 state->editor.escape();
+                state->showConsistencyWarning = false;
+            }
             releaseMouseCapture(hWnd);
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
@@ -283,6 +366,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         state->editor.pointerUp();
         state->editor.cancelParallelSelection();
+        state->showConsistencyWarning = false;
         releaseMouseCapture(hWnd);
 
         InvalidateRect(hWnd, nullptr, FALSE);
@@ -299,6 +383,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const UINT removeLengthFlags = MF_STRING | (state->editor.selectedFixedLength() ? MF_ENABLED : MF_GRAYED);
         const auto edgeLength = state->editor.selectedEdgeLength();
         const UINT parallelFlags = MF_STRING | (edgeLength && *edgeLength > 0.0 ? MF_ENABLED : MF_GRAYED);
+        const auto menuEdge = state->editor.selection().edge;
+        std::vector<cad::EdgeId> parallelRemovalTargets;
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
@@ -306,7 +392,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 state->editor.selectedFixedLength() ? L"Zmień stałą długość..." : L"Ustaw stałą długość...") ||
             !AppendMenuW(menu, removeLengthFlags, IDM_REMOVE_FIXED_LENGTH, L"Usuń ograniczenie długości") ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
-            !AppendMenuW(menu, parallelFlags, IDM_ADD_PARALLEL, L"Ustaw równoległość z..."))
+            !AppendMenuW(menu, parallelFlags, IDM_ADD_PARALLEL, L"Ustaw równoległość z...") ||
+            !appendParallelRemovalMenu(menu, state->editor, parallelRemovalTargets))
         {
             DestroyMenu(menu);
             return 0;
@@ -316,12 +403,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
             screenPosition.x, screenPosition.y, 0, hWnd, nullptr);
         DestroyMenu(menu);
+        if (command >= parallelRemovalCommandBase && command - parallelRemovalCommandBase < parallelRemovalTargets.size())
+        {
+            const cad::EdgeId other = parallelRemovalTargets[command - parallelRemovalCommandBase];
+            if (state->editor.selection().edge == menuEdge && state->editor.removeSelectedEdgeParallel(other))
+            {
+                releaseMouseCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
+            return 0;
+        }
         if (command != 0)
             SendMessageW(hWnd, WM_COMMAND, MAKEWPARAM(command, 0), 0);
         return 0;
     }
     case WM_COMMAND:
         {
+            if (auto* state = getAppState(hWnd); state && state->showConsistencyWarning)
+            {
+                state->showConsistencyWarning = false;
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
             int wmId = LOWORD(wParam);
             // Analizuj zaznaczenia menu:
             switch (wmId)
@@ -350,7 +452,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     return 0;
                 if (!state->editor.setSelectedEdgeLength(*length))
                 {
-                    MessageBoxW(hWnd, L"Nie udało się dopasować geometrii do podanej długości. Dokument nie został zmieniony.",
+                    MessageBoxW(hWnd, L"Nie udało się uzyskać spójnego stanu dla podanej długości. Dokument nie został zmieniony.",
                         L"Stała długość", MB_OK | MB_ICONWARNING);
                     return 0;
                 }
@@ -438,6 +540,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (state)
                 {
                     state->editor.cancelInteraction();
+                    state->showConsistencyWarning = false;
                     releaseMouseCapture(hWnd);
                     state->backBuffer.reset();
                 }
@@ -476,6 +579,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             const auto& selection = state->editor.selection();
                             cad::win32::drawDocument(targetDc, state->editor.document(), clientRect,
                                 selection.vertex, selection.polygon, selection.edge, state->editor.pendingParallelEdge());
+                            if (state->showConsistencyWarning)
+                                drawConsistencyWarning(targetDc, clientRect);
                         }
                     };
 

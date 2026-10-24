@@ -41,6 +41,8 @@ namespace cad::editor
         // Failure keeps the document, selection and pending first edge unchanged.
         bool completeParallelSelection(EdgeId second);
         void cancelParallelSelection() noexcept;
+        // Removes only the pair (selected edge, other), without solving or moving geometry.
+        bool removeSelectedEdgeParallel(EdgeId other);
 
     private:
         struct DragTransaction

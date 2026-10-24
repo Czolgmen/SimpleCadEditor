@@ -278,4 +278,13 @@ namespace cad::editor
     {
         pendingParallelEdge_.reset();
     }
+
+    bool EditorSession::removeSelectedEdgeParallel(EdgeId other)
+    {
+        if (!selection_.edge || !document_.removeParallel(*selection_.edge, other))
+            return false;
+        cancelParallelSelection();
+        pointerUp();
+        return true;
+    }
 }

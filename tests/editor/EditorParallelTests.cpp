@@ -266,6 +266,132 @@ namespace
         requireDocument(session.document(), scene.document);
     }
 
+    void removesOnlyChosenPairFromEitherArgumentPosition()
+    {
+        for (const bool reverse : {false, true})
+        for (std::size_t removed = 0; removed < 3; ++removed)
+        {
+            Scene scene;
+            const EdgeId selected = scene.first.edges[0];
+            const std::array others{scene.first.edges[2], scene.second.edges[0], scene.second.edges[2]};
+            for (const EdgeId other : others)
+                require(reverse ? scene.document.addParallel(other, selected) : scene.document.addParallel(selected, other),
+                    "Removal pair fixture failed");
+            require(scene.document.addParallel(scene.first.edges[1], scene.second.edges[1]), "Unrelated pair fixture failed");
+            require(scene.document.setFixedLength(selected, 20), "Removal length fixture failed");
+            Document expected = scene.document;
+            require(expected.removeParallel(selected, others[removed]), "Expected pair removal failed");
+            EditorSession session{scene.document};
+            require(session.selectAt({10, 0}, 0) && session.selection().edge == selected, "Removal selection failed");
+            require(session.removeSelectedEdgeParallel(others[removed]), "Chosen pair was not removed");
+            requireDocument(session.document(), expected);
+            require(session.selection().edge == selected && !session.selection().vertex && !session.selection().polygon,
+                "Pair removal changed edge selection");
+            require(!session.removeSelectedEdgeParallel(others[removed]), "Repeated pair removal succeeded");
+            requireDocument(session.document(), expected);
+        }
+    }
+
+    void rejectedRemovalPreservesSelectionGestureAndPendingSource()
+    {
+        Scene scene;
+        require(scene.document.addParallel(scene.first.edges[0], scene.first.edges[2]) &&
+            scene.document.addParallel(scene.second.edges[0], scene.second.edges[2]), "Removal guard fixture failed");
+        EditorSession session{scene.document};
+        require(!session.removeSelectedEdgeParallel(scene.first.edges[2]), "Empty selection removed a pair");
+        require(session.pointerDown({0, 0}, 0), "Guard vertex gesture failed");
+        require(!session.removeSelectedEdgeParallel(scene.first.edges[2]) && session.isDragging(), "Rejected removal ended a drag");
+        require(session.selection().vertex == scene.first.vertices[0], "Rejected removal changed vertex selection");
+        require(session.cancelInteraction(), "Rejected removal lost drag snapshot");
+        session.selectAt({10, 10}, 0);
+        require(!session.removeSelectedEdgeParallel(scene.first.edges[2]) && session.selection().polygon == scene.first.id,
+            "Polygon selection removed a pair or changed selection");
+        session.selectAt({10, 0}, 0);
+        require(session.beginParallelSelection(), "Could not prepare pending removal guard");
+        for (const EdgeId invalid : {EdgeId{}, EdgeId{999999}, scene.first.edges[0], scene.second.edges[0]})
+        {
+            require(!session.removeSelectedEdgeParallel(invalid), "Unrelated or missing pair was removed");
+            require(session.pendingParallelEdge() == scene.first.edges[0] && session.selection().edge == scene.first.edges[0],
+                "Rejected removal changed pending source or selection");
+            requireDocument(session.document(), scene.document);
+        }
+    }
+
+    void removingPairDoesNotValidateOrSolveDegenerateGeometry()
+    {
+        Scene scene;
+        require(scene.document.addParallel(scene.first.edges[0], scene.first.edges[2]) &&
+            scene.document.setFixedLength(scene.first.edges[0], 20), "Degenerate removal fixture failed");
+        EditorSession session{scene.document};
+        session.selectAt({10, 0}, 0);
+        // A stored relation must remain removable if its direction later degenerates.
+        auto* end = const_cast<Vertex*>(session.document().findVertex(scene.first.vertices[1]));
+        end->position = {0, 0};
+        Document expected = session.document();
+        require(expected.removeParallel(scene.first.edges[0], scene.first.edges[2]), "Expected degenerate removal failed");
+        require(session.removeSelectedEdgeParallel(scene.first.edges[2]), "Degenerate geometry prevented removing a pair");
+        requireDocument(session.document(), expected);
+        require(session.selectedFixedLength() == 20, "Removing parallelism removed the length target");
+    }
+
+    void successfulRemovalEndsPendingSelectionAndCannotBeRolledBack()
+    {
+        Scene scene;
+        require(scene.document.addParallel(scene.first.edges[0], scene.first.edges[2]), "Pending removal fixture failed");
+        EditorSession session{scene.document};
+        session.selectAt({10, 0}, 0);
+        require(session.beginParallelSelection() && session.removeSelectedEdgeParallel(scene.first.edges[2]),
+            "Removal during second-edge selection failed");
+        require(!session.pendingParallelEdge() && !session.isDragging(), "Removal left an active interaction");
+        Document expected = scene.document;
+        require(expected.removeParallel(scene.first.edges[0], scene.first.edges[2]), "Expected pending removal failed");
+        require(!session.completeParallelSelection(scene.second.edges[0]) && !session.cancelInteraction(),
+            "Removal retained a stale source or cancellable snapshot");
+        session.pointerUp();
+        session.escape();
+        requireDocument(session.document(), expected);
+    }
+
+    void removingOnePairFreesItsDragAndKeepsOtherRelations()
+    {
+        Scene scene;
+        require(scene.document.moveVertex(scene.second.vertices[1], {120, 100}), "Aligned removal fixture failed");
+        require(scene.document.addParallel(scene.first.edges[0], scene.second.edges[0]) &&
+            scene.document.addParallel(scene.first.edges[1], scene.second.edges[1]) &&
+            scene.document.setFixedLength(scene.first.edges[1], 20), "Retained relation fixture failed");
+        EditorSession session{scene.document};
+        session.selectAt({10, 0}, 0);
+        require(session.removeSelectedEdgeParallel(scene.second.edges[0]), "Cross-polygon removal failed");
+        const Document afterRemoval = session.document();
+        require(session.pointerDown({0, 0}, 0) && session.pointerMove({5, 10}), "Freed vertex could not move");
+        requirePosition(session.document(), scene.first.vertices[0], {5, 10});
+        for (const auto& [id, polygon] : scene.document.getPolygons())
+        {
+            (void)id;
+            for (const VertexId vertex : polygon.vertices)
+                if (vertex != scene.first.vertices[0])
+                    requirePosition(session.document(), vertex, scene.document.findVertex(vertex)->position);
+        }
+        requireSatisfied(session.document());
+        requireStorage(session.document(), afterRemoval);
+        const auto freedError = constraint::parallelError(session.document(), {scene.first.edges[0], scene.second.edges[0]});
+        require(freedError && std::abs(*freedError) > 0.1, "Removed parallel pair still restricted the drag");
+        require(session.cancelInteraction(), "Freed drag could not be cancelled");
+        requireDocument(session.document(), afterRemoval);
+    }
+
+    void removedPairCanBeAddedAgain()
+    {
+        Scene scene;
+        require(scene.document.addParallel(scene.first.edges[0], scene.first.edges[2]), "Re-add fixture failed");
+        EditorSession session{scene.document};
+        session.selectAt({10, 0}, 0);
+        require(session.removeSelectedEdgeParallel(scene.first.edges[2]) && session.beginParallelSelection() &&
+            session.completeParallelSelection(scene.first.edges[2]), "Removed pair could not be added again");
+        requireDocument(session.document(), scene.document);
+        require(session.selection().edge == scene.first.edges[2], "Re-added pair lost completion selection");
+    }
+
     void completionIsCommittedAndLaterDraggingUsesNewPair()
     {
         Scene scene;
@@ -300,7 +426,13 @@ namespace cad::tests
             TestCase{"conflicting pair rolls back solver and relation storage", conflictingParallelismRollsBackSolverAndMetadata},
             TestCase{"successful editing commands cancel pending source", topologyAndOtherSuccessfulCommandsCancelPendingSource},
             TestCase{"invalid selection input preserves pending source", invalidSelectionInputKeepsPendingSource},
-            TestCase{"completion commits and later dragging uses the new pair", completionIsCommittedAndLaterDraggingUsesNewPair}
+            TestCase{"completion commits and later dragging uses the new pair", completionIsCommittedAndLaterDraggingUsesNewPair},
+            TestCase{"remove only chosen pair from either argument position", removesOnlyChosenPairFromEitherArgumentPosition},
+            TestCase{"rejected removal preserves gesture and pending source", rejectedRemovalPreservesSelectionGestureAndPendingSource},
+            TestCase{"removal works without solving degenerate geometry", removingPairDoesNotValidateOrSolveDegenerateGeometry},
+            TestCase{"removal ends pending selection and commits", successfulRemovalEndsPendingSelectionAndCannotBeRolledBack},
+            TestCase{"removing one pair frees its drag and keeps other relations", removingOnePairFreesItsDragAndKeepsOtherRelations},
+            TestCase{"removed pair can be added again", removedPairCanBeAddedAgain}
         };
         return tests;
     }
