@@ -92,6 +92,7 @@
     <ClCompile Include="core\DocumentParallelTests.cpp" />
     <ClCompile Include="core\EdgeConversionTests.cpp" />
     <ClCompile Include="core\EdgeSamplingTests.cpp" />
+    <ClCompile Include="core\ControlPointMovementTests.cpp" />
     <ClCompile Include="core\DeleteVertexTests.cpp" />
     <ClCompile Include="core\SplitEdgeTests.cpp" />
     <ClCompile Include="core\ValidationTests.cpp" />
@@ -99,6 +100,8 @@
     <ClCompile Include="geometry\BezierTests.cpp" />
     <ClCompile Include="editor\HitTesterTests.cpp" />
     <ClCompile Include="editor\CurveHitTesterTests.cpp" />
+    <ClCompile Include="editor\ControlPointHitTesterTests.cpp" />
+    <ClCompile Include="editor\ControlPointDragTests.cpp" />
     <ClCompile Include="editor\EditorSessionTests.cpp" />
     <ClCompile Include="editor\EditorParallelTests.cpp" />
     <ClCompile Include="editor\LengthInputTests.cpp" />
@@ -108,6 +111,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
+    <ClInclude Include="CurveTestSupport.h" />
     <ClInclude Include="..\src\editor\HitTester.h" />
     <ClInclude Include="..\src\editor\EditorSession.h" />
     <ClInclude Include="..\src\editor\LengthInput.h" />

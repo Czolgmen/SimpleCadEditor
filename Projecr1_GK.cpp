@@ -606,7 +606,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         {
                             const auto& selection = state->editor.selection();
                             cad::win32::drawDocument(targetDc, state->editor.document(), clientRect,
-                                selection.vertex, selection.polygon, selection.edge, state->editor.pendingParallelEdge());
+                                selection.vertex, selection.polygon, selection.edge, state->editor.pendingParallelEdge(),
+                                selection.controlPoint);
                             if (state->showConsistencyWarning)
                                 drawConsistencyWarning(targetDc, clientRect);
                         }

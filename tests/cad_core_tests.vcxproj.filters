@@ -49,6 +49,9 @@
     <ClCompile Include="core\EdgeSamplingTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\ControlPointMovementTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\DeleteVertexTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
@@ -68,6 +71,12 @@
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\CurveHitTesterTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\ControlPointHitTesterTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\ControlPointDragTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\EditorSessionTests.cpp">
@@ -91,6 +100,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
+    <ClInclude Include="CurveTestSupport.h" />
     <ClInclude Include="..\src\editor\HitTester.h">
       <Filter>editor</Filter>
     </ClInclude>

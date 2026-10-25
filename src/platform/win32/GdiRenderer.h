@@ -11,7 +11,7 @@
 #include <windows.h>
 #include <optional>
 #include <cad_core/model/Id.h>
-
+#include <cad_core/model/ControlPointRef.h>
 
 
 namespace cad
@@ -23,5 +23,7 @@ namespace cad::win32
 {
     void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect,
         std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon,
-        std::optional<cad::EdgeId> selectedEdge, std::optional<cad::EdgeId> pendingParallelEdge = {});
+        std::optional<cad::EdgeId> selectedEdge, std::optional<cad::EdgeId> pendingParallelEdge = {},
+        std::optional<cad::ControlPointRef> selectedControlPoint = {});
+        
 }

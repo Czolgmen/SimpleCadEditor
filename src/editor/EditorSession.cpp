@@ -45,6 +45,12 @@ namespace cad::editor
         pointerUp();
         cancelParallelSelection();
         selection_ = {};
+
+        selection_.controlPoint = hitTestControlPoint(document_, worldPosition, tolerance);
+
+        if (selection_.controlPoint)
+            return true;
+
         selection_.vertex = hitTestVertex(document_, worldPosition, tolerance);
         if (!selection_.vertex)
         {
@@ -74,6 +80,33 @@ namespace cad::editor
         {
             drag_.emplace(DragTransaction{document_, DraggingPolygon{*selection_.polygon, worldPosition}});
         }
+        else if (selection_.controlPoint)
+        {
+            const auto control = *selection_.controlPoint;
+            const auto* edge = document_.findEdge(control.edge);
+            if (!edge)
+                return false;
+
+            const auto* bezier = std::get_if<CubicBezier>(&edge->geometry);
+            if (!bezier)
+                return false;
+
+            const Vec2 position = 
+                control.point == BezierControlPoint::First
+                    ? bezier->control1
+                    : bezier->control2;
+
+            const Vec2 offset = position - worldPosition;
+            if (!isFinite(offset))
+                return false;
+
+            drag_.emplace(DragTransaction{
+                document_,
+                DraggingControlPoint{
+                    control, offset
+                }
+            });
+        }
         return isDragging();
     }
 
@@ -81,15 +114,21 @@ namespace cad::editor
     {
         if (!drag_ || !isFinite(worldPosition))
             return false;
-
-        // Vertex solving continues from the last accepted preview; polygon translation
-        // remains absolute relative to the initial snapshot.
-        Document candidate = std::holds_alternative<DraggingVertex>(drag_->state)
-            ? document_ : drag_->initialDocument;
+    
+        Document candidate =
+            std::holds_alternative<DraggingPolygon>(drag_->state)
+                ? drag_->initialDocument
+                : document_;
+    
         bool moved = false;
-        if (const auto* vertex = std::get_if<DraggingVertex>(&drag_->state))
+    
+        if (const auto* vertex =
+            std::get_if<DraggingVertex>(&drag_->state))
         {
-            moved = candidate.moveVertex(vertex->vertex, worldPosition + vertex->grabOffset);
+            moved = candidate.moveVertex(
+                vertex->vertex,
+                worldPosition + vertex->grabOffset);
+            
             if (moved)
             {
                 const auto result = solver::solveConstraints(
@@ -97,18 +136,28 @@ namespace cad::editor
                     candidate.getFixedLengthConstraints(),
                     candidate.getParallelConstraints(),
                     vertex->vertex);
-
+                
                 moved = result.status == solver::SolveStatus::Converged;
             }
         }
-        else
+        else if (const auto* control =
+            std::get_if<DraggingControlPoint>(&drag_->state))
         {
-            const auto& polygon = std::get<DraggingPolygon>(drag_->state);
-            moved = candidate.movePolygon(polygon.polygon, worldPosition - polygon.pointerOrigin);
+            moved = candidate.moveControlPoint(
+                control->control,
+                worldPosition + control->grabOffset);
         }
-
+        else if (const auto* polygon =
+            std::get_if<DraggingPolygon>(&drag_->state))
+        {
+            moved = candidate.movePolygon(
+                polygon->polygon,
+                worldPosition - polygon->pointerOrigin);
+        }
+    
         if (!moved)
             return false;
+    
         document_ = std::move(candidate);
         return true;
     }

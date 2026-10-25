@@ -154,6 +154,11 @@ namespace cad {
     }
     bool Document::movePolygon(PolygonId id, const Vec2 &delta)
     {
+        const Vec2 translation = delta;
+
+        if (!std::isfinite(translation.x) || !std::isfinite(translation.y))
+            return false;
+
         const auto* polygon = findPolygon(id);
         if(!polygon)
             return false;
@@ -165,7 +170,7 @@ namespace cad {
             if (!vertex)
                 return false;
 
-            const Vec2 newPosition = vertex->position + delta;
+            const Vec2 newPosition = vertex->position + translation;
 
             if (!std::isfinite(newPosition.x) ||
                 !std::isfinite(newPosition.y))
@@ -174,11 +179,46 @@ namespace cad {
                 }
         }
 
+        for (const auto edgeId : polygon->edges)
+        {
+            const auto* edge = findEdge(edgeId);
+            if (!edge)
+                return false;
+        
+            if (const auto* bezier =
+                std::get_if<CubicBezier>(&edge->geometry))
+            {
+                for (const Vec2 control : {
+                    bezier->control1, bezier->control2})
+                {
+                    const Vec2 newPosition = control + translation;
+                
+                    if (!std::isfinite(newPosition.x) ||
+                        !std::isfinite(newPosition.y))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
         for(const auto vertexId: polygon->vertices)
         {
             auto it = vertices.find(vertexId);
             
-            it->second.position = it->second.position + delta;
+            it->second.position = it->second.position + translation;
+        }
+
+        for (const auto edgeId : polygon->edges)
+        {
+            auto it = edges.find(edgeId);
+        
+            if (auto* bezier =
+                std::get_if<CubicBezier>(&it->second.geometry))
+            {
+                bezier->control1 = bezier->control1 + translation;
+                bezier->control2 = bezier->control2 + translation;
+            }
         }
 
         return true;
@@ -459,7 +499,7 @@ namespace cad {
 
         return true;
     }
-    
+
     bool Document::convertEdgeToSegment(EdgeId id)
     {
         auto it = edges.find(id);
@@ -468,5 +508,32 @@ namespace cad {
 
         it->second.geometry = LineSegment{};
         return true;
+    }
+    bool Document::moveControlPoint(ControlPointRef control, const Vec2 &position)
+    {
+        if (!std::isfinite(position.x) || !std::isfinite(position.y))
+            return false;
+
+        auto it = edges.find(control.edge);
+        if (it == edges.end())
+            return false;
+
+        auto* bezier = std::get_if<CubicBezier>(&it->second.geometry);
+        if (!bezier)
+            return false;
+
+        switch (control.point)
+        {
+            case BezierControlPoint::First:
+                bezier->control1 = position;
+                return true;
+
+            case BezierControlPoint::Second:
+                bezier->control2 = position;
+                return true;
+            
+            default:
+                return false;
+        }
     }
 }

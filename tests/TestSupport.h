@@ -28,6 +28,9 @@ namespace cad::tests
     std::span<const TestCase> validationTests();
     std::span<const TestCase> hitTesterTests();
     std::span<const TestCase> curveHitTesterTests();
+    std::span<const TestCase> controlPointHitTesterTests();
+    std::span<const TestCase> controlPointMovementTests();
+    std::span<const TestCase> controlPointDragTests();
     std::span<const TestCase> splitEdgeTests();
     std::span<const TestCase> deleteVertexTests();
     std::span<const TestCase> editorSessionTests();

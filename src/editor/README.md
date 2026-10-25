@@ -5,8 +5,8 @@
 ## API dla frontendu
 
 - `document()` i `selection()` udostępniają stan tylko do odczytu. Odwołania do encji należy pobierać ponownie po modyfikacji sesji.
-- `selectAt(position, tolerance)` wybiera wierzchołek, krawędź albo wnętrze figury, w tej kolejności. Puste tło usuwa zaznaczenie. Metoda nie rozpoczyna gestu, a trwający gest zatwierdza; służy m.in. do wskazywania celu menu kontekstowego.
-- `pointerDown(position, tolerance)` wybiera element i rozpoczyna przeciąganie wierzchołka lub wielokąta. Zwraca `true`, jeśli rozpoczął gest. Kliknięcie krawędzi tylko ją zaznacza.
+- `selectAt(position, tolerance)` wybiera uchwyt, wierzchołek, krawędź albo wnętrze figury, w tej kolejności. Puste tło usuwa zaznaczenie. Metoda nie rozpoczyna gestu, a trwający gest zatwierdza; służy m.in. do wskazywania celu menu kontekstowego.
+- `pointerDown(position, tolerance)` wybiera element i rozpoczyna przeciąganie uchwytu, wierzchołka lub wielokąta. Zwraca `true`, jeśli rozpoczął gest. Kliknięcie krawędzi tylko ją zaznacza. Uchwyty mają pierwszeństwo przed wierzchołkami, a zaznaczenie jest wyłączne.
 - `pointerMove(position)` aktualizuje podgląd i zwraca `true`, jeśli kandydat został przyjęty. Niepoprawne współrzędne lub odrzucony ruch pozostawiają ostatni poprawny dokument.
 - `pointerUp()` zatwierdza ostatni poprawny podgląd i kończy gest. Frontend może wcześniej przekazać końcową pozycję przez `pointerMove`.
 - `cancelInteraction()` przywraca dokument sprzed aktywnego przeciągania albo anuluje wybór drugiej krawędzi, zachowując zaznaczenie. Zwraca `true`, jeśli zakończył interakcję. W stanie bezczynności niczego nie zmienia.
@@ -20,7 +20,7 @@
 - `removeSelectedEdgeParallel(other)` usuwa wyłącznie parę zaznaczonej krawędzi i `other`, niezależnie od kolejności zapisanej pary. Nie uruchamia solvera ani nie przesuwa punktów; pozostałe pary i długości zostają zachowane. Sukces kończy wybór drugiej krawędzi i zachowuje zaznaczenie. Brak pary lub zaznaczenia krawędzi zwraca `false` bez zmiany dokumentu i interakcji.
 - `convertSelectedEdgeToBezier()` i `convertSelectedEdgeToSegment()` delegują konwersję do dokumentu. Sukces zachowuje zaznaczenie krawędzi i kończy interakcję; odrzucenie zachowuje dokument, zaznaczenie i wybór drugiej krawędzi. Konwersja na Béziera usuwa jego relacje odcinka. Powrót do odcinka nie odtwarza starych relacji. Ponowna konwersja na ten sam typ zachowuje istniejące dane, w tym uchwyty krzywej.
 
-Menu PPM i Shift+F10 udostępnia „Zamień na Béziera” dla odcinka oraz „Zamień na odcinek” dla krzywej. Renderer pokazuje próbkowaną krzywą, przerywany wielobok kontrolny i dwa kwadratowe uchwyty. Ich trafianie i przeciąganie oraz ciągłość G1/C1 są kolejnymi etapami.
+Menu PPM i Shift+F10 udostępnia „Zamień na Béziera” dla odcinka oraz „Zamień na odcinek” dla krzywej. Renderer pokazuje próbkowaną krzywą, przerywany wielobok kontrolny i dwa kwadratowe uchwyty. Wybrany uchwyt ma niebieski obrys i można go przeciągać z zachowaniem przesunięcia miejsca złapania. `Document::moveControlPoint` ustawia pozycję jednego uchwytu, odrzucając niepoprawną pozycję, typ krawędzi lub referencję. Ten etap swobodnej edycji nie wymusza jeszcze ciągłości G1/C1.
 
 `hitTestEdge` i test wnętrza korzystają ze wspólnego `sampleEdge`, tak jak renderer. Dla odcinka dostają dwa końce, a dla Béziera domyślnie 101 próbek. Trafienie krawędzi porównuje odległość od każdego fragmentu łamanej w całej scenie, zachowując pierwszą krawędź przy remisie. Test wnętrza zlicza przecięcia promienia ze wszystkimi fragmentami konturu regułą parzystości. Obsługuje wygięcia do środka i na zewnątrz, samoprzecięcia oraz kontury z wieloma krzywymi; nakładające się figury są wybierane od ostatniej rysowanej.
 
@@ -34,7 +34,7 @@ Pozycje i tolerancja są w jednostkach świata. Frontend przelicza współrzędn
 
 ## Gesty
 
-`DragState` to `std::variant<DraggingVertex, DraggingPolygon>`; brak transakcji oznacza bezczynność. Nie da się jednocześnie przeciągać punktu i figury.
+`DragState` to `std::variant<DraggingVertex, DraggingPolygon, DraggingControlPoint>`; brak transakcji oznacza bezczynność. W danym momencie aktywny jest jeden rodzaj przeciągania. Referencja uchwytu zawiera ID krawędzi i wybór pierwszego albo drugiego punktu kontrolnego.
 
 Transakcja przechowuje kopię początkowego dokumentu wraz z ograniczeniami. Podgląd wierzchołka powstaje z ostatniego poprawnego dokumentu: punkt zachowuje przesunięcie miejsca złapania i otrzymuje dokładną pozycję z kursora, a solver dopasowuje pozostałe punkty do zapisanych długości i równoległości. Nieudana próba zachowuje ostatni poprawny podgląd i pozwala kontynuować gest. Figura otrzymuje translację od początkowej pozycji kursora na kopii stanu początkowego, co zachowuje długości i kierunki krawędzi bez sumowania przyrostów. Kopiowanie dokumentu na każde przesunięcie jest celową, prostą implementacją dla małych scen z zadania.
 

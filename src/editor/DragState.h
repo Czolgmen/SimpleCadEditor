@@ -2,6 +2,7 @@
 
 #include <cad_core/geometry/Vec2.h>
 #include <cad_core/model/Id.h>
+#include <cad_core/model/ControlPointRef.h>
 
 #include <variant>
 
@@ -19,5 +20,11 @@ namespace cad::editor
         cad::Vec2 pointerOrigin{};
     };
 
-    using DragState = std::variant<DraggingVertex, DraggingPolygon>;
+    struct DraggingControlPoint
+    {
+        cad::ControlPointRef control;
+        cad::Vec2 grabOffset{};
+    };
+
+    using DragState = std::variant<DraggingVertex, DraggingPolygon, DraggingControlPoint>;
 } // namespace cad::editor

@@ -80,6 +80,7 @@
     <ClInclude Include="include\cad_core\geometry\Vec2.h" />
     <ClInclude Include="include\cad_core\geometry\Bezier.h" />
     <ClInclude Include="include\cad_core\model\Id.h" />
+    <ClInclude Include="include\cad_core\model\ControlPointRef.h" />
     <ClInclude Include="include\cad_core\model\Vertex.h" />
     <ClInclude Include="include\cad_core\model\Edge.h" />
     <ClInclude Include="include\cad_core\model\EdgeGeometry.h" />

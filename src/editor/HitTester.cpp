@@ -2,8 +2,10 @@
 
 #include <cad_core/model/Document.h>
 #include <cad_core/model/EdgeSampling.h>
+#include <cad_core/model/EdgeGeometry.h>
 
 #include <algorithm>
+#include <cmath>
 
 namespace cad::editor
 {
@@ -66,7 +68,7 @@ namespace cad::editor
                 edge->geometry,
                 start->position,
                 end->position);
-                        
+
             for (std::size_t i = 1; i < points.size(); ++i)
             {
                 const Vec2& a = points[i - 1];
@@ -170,5 +172,67 @@ namespace cad::editor
         return nearest;
     }
 
+    std::optional<ControlPointRef> hitTestControlPoint(const Document &document, const Vec2 &worldPosition, double tolerance)
+    {
+        if (!std::isfinite(tolerance) || tolerance < 0)
+            return std::nullopt;
 
+        std::optional<ControlPointRef> nearest = std::nullopt;
+        double BestDistanceSquared = tolerance * tolerance;
+
+        for (const auto& [polygonId, polygon] : document.getPolygons())
+        {
+            for(const auto& edgeId : polygon.edges)
+            {
+                const auto* edge = document.findEdge(edgeId);
+                if (!edge)
+                    continue;
+
+                const auto* start = document.findVertex(edge->start);
+                const auto* end = document.findVertex(edge->end);
+                
+                if (!start || !end)
+                    continue;
+
+                if (std::holds_alternative<CubicBezier>(edge->geometry))
+                {
+                    const CubicBezier& geometry = std::get<CubicBezier>(edge->geometry);
+
+                    const auto& control1 = geometry.control1;
+                    const auto& control2 = geometry.control2;
+
+                    const Vec2 difference1 = control1 - worldPosition;
+                    const Vec2 difference2 = control2 - worldPosition;
+
+                    const double dist1Squared = dot(difference1, difference1);
+                    const double dist2Squared = dot(difference2, difference2);
+                    if (dist1Squared < BestDistanceSquared || (!nearest && dist1Squared <= BestDistanceSquared))
+                    {
+                        nearest = ControlPointRef{
+                            edgeId,
+                            BezierControlPoint::First
+                        };
+                        BestDistanceSquared = dist1Squared;
+                    }
+
+                    if (dist2Squared < BestDistanceSquared || (!nearest && dist2Squared <= BestDistanceSquared))
+                    {
+                        nearest = ControlPointRef{
+                            edgeId,
+                            BezierControlPoint::Second
+                        };
+                        BestDistanceSquared = dist2Squared;
+                    }
+
+
+                }
+
+            }
+
+
+        }
+
+        return nearest;
+
+    }
 }

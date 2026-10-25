@@ -5,6 +5,7 @@
 #include <cad_core/model/Polygon.h>
 #include <cad_core/model/Id.h>
 #include <cad_core/model/Validation.h>
+#include <cad_core/model/ControlPointRef.h>
 
 #include <cad_core/constraints/FixedLengthConstraint.h>
 #include <cad_core/constraints/ParallelConstraint.h>
@@ -63,6 +64,11 @@ namespace cad
 
         bool convertEdgeToBezier(EdgeId id);
         bool convertEdgeToSegment(EdgeId id);
+
+        bool moveControlPoint(
+            ControlPointRef control,
+            const Vec2& position
+        );
         
 
     };

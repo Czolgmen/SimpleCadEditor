@@ -2,7 +2,7 @@
 
 [Spis treści](README.md)
 
-Stan wdrożenia: model ma odcinek i `CubicBezier` z dwoma uchwytami, funkcję punktu oraz próbkowanie przyrostowe. Działają konwersje w dokumencie, sesji i menu PPM, czyszczenie ograniczeń odcinka oraz rysowanie krzywej, wieloboku kontrolnego i uchwytów. Renderer oraz testy krawędzi i wnętrza używają wspólnej łamanej z `sampleEdge`. Domyślne G1, pozostałe klasy ciągłości, trafianie i edycja uchwytów, podział de Casteljau i łuki opisane poniżej pozostają planem. Interfejs blokuje podział Béziera do czasu implementacji właściwego algorytmu.
+Stan wdrożenia: model ma odcinek i `CubicBezier` z dwoma uchwytami, funkcję punktu oraz próbkowanie przyrostowe. Działają konwersje w dokumencie, sesji i menu PPM, czyszczenie ograniczeń odcinka oraz rysowanie krzywej, wieloboku kontrolnego i uchwytów. Renderer oraz testy krawędzi i wnętrza używają wspólnej łamanej z `sampleEdge`. Uchwyty mają hit test, wyłączne zaznaczenie i swobodne przeciąganie z anulowaniem gestu. Translacja figury przesuwa także oba uchwyty każdej jej krzywej. Domyślne G1, pozostałe klasy ciągłości, podział de Casteljau i łuki opisane poniżej pozostają planem. Interfejs blokuje podział Béziera do czasu implementacji właściwego algorytmu.
 
 ## Wspólna reprezentacja
 

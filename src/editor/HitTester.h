@@ -2,6 +2,7 @@
 
 #include <cad_core/geometry/Vec2.h>
 #include <cad_core/model/Id.h>
+#include <cad_core/model/ControlPointRef.h>
 
 #include <optional>
 
@@ -24,6 +25,12 @@ namespace cad::editor
     );
 
     std::optional<EdgeId> hitTestEdge (
+        const Document& document,
+        const Vec2& worldPosition,
+        double tolerance
+    );
+
+    std::optional<ControlPointRef> hitTestControlPoint(
         const Document& document,
         const Vec2& worldPosition,
         double tolerance

@@ -24,7 +24,8 @@ namespace cad::win32
 
     void drawDocument(HDC dc, const cad::Document& document, const RECT& clientRect,
         std::optional<cad::VertexId> selectedVertex, std::optional<cad::PolygonId> selectedPolygon,
-        std::optional<cad::EdgeId> selectedEdge, std::optional<cad::EdgeId> pendingParallelEdge)
+        std::optional<cad::EdgeId> selectedEdge, std::optional<cad::EdgeId> pendingParallelEdge,
+        std::optional<cad::ControlPointRef> selectedControlPoint)
     {
         HPEN normalPen = CreatePen(PS_SOLID, 2, RGB(0,0,0));
         HPEN selectedPen = CreatePen(PS_SOLID, 4, RGB(0,120,215));
@@ -94,8 +95,18 @@ namespace cad::win32
 
                     constexpr int radius = 5;
 
-                    for (const POINT control : {c1, c2})
+                    for (const auto which : {
+                        BezierControlPoint::First,
+                        BezierControlPoint::Second})
                     {
+                        const POINT control =
+                            which == BezierControlPoint::First ? c1 : c2;
+                    
+                        const bool selected =
+                            selectedControlPoint == ControlPointRef{IdEdge, which};
+                    
+                        SelectObject(dc, selected ? selectedPen : normalPen);
+                    
                         Rectangle(dc,
                             control.x - radius, control.y - radius,
                             control.x + radius, control.y + radius);

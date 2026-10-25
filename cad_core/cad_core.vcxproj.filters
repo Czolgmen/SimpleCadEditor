@@ -57,6 +57,9 @@
     <ClInclude Include="include\cad_core\model\Id.h">
       <Filter>include\model</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\model\ControlPointRef.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\model\Vertex.h">
       <Filter>include\model</Filter>
     </ClInclude>
