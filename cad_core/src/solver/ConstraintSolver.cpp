@@ -467,23 +467,37 @@ namespace
 
             if (!std::isfinite(rhs[i]))
                 return std::nullopt;
-            for (std::size_t j = 0; j < rows; ++j)
+            // J*J^T is symmetric. Cache contiguous rows outside the hot loop;
+            // Debug STL bounds/iterator machinery is expensive per scalar access.
+            const double* rowI = jacobian[i].data();
+            double* systemRow = system[i].data();
+            for (std::size_t j = 0; j <= i; ++j)
+            {
+                const double* rowJ = jacobian[j].data();
+                double value = 0.0;
                 for (std::size_t k = 0; k < columns; ++k)
-                    system[i][j] += jacobian[i][k] * jacobian[j][k];
-            system[i][i] += damping;
+                    value += rowI[k] * rowJ[k];
+                systemRow[j] = value;
+                system[j][i] = value;
+            }
+            systemRow[i] += damping;
         }
         // (J J^T + lambda I)y = -Fscaled; deltaNormalized = J^T y.
         const auto y = solveLinearSystem(std::move(system), std::move(rhs));
         if (!y)
             return std::nullopt;
         std::vector<double> delta(columns, 0);
-        for (std::size_t column = 0; column < columns; ++column)
+        double* deltaValues = delta.data();
+        for (std::size_t row = 0; row < rows; ++row)
         {
-            for (std::size_t row = 0; row < rows; ++row)
-                delta[column] += jacobian[row][column] * (*y)[row];
-            if (!std::isfinite(delta[column]))
-                return std::nullopt;
+            const double* jacobianRow = jacobian[row].data();
+            const double value = (*y)[row];
+            for (std::size_t column = 0; column < columns; ++column)
+                deltaValues[column] += jacobianRow[column] * value;
         }
+        for (const double value : delta)
+            if (!std::isfinite(value))
+                return std::nullopt;
         return delta;
     }
     std::optional<std::vector<double>> dampedCorrection(
@@ -634,6 +648,7 @@ namespace
         if (!currentNorm)
             return false;
 
+        Document trial = candidate;
         for (const auto& point : variables)
         {
             const auto original = getPointPosition(candidate, point);
@@ -656,19 +671,19 @@ namespace
                         if (!std::isfinite(coordinate) || coordinate == before)
                             continue;
 
-                        Document trial = candidate;
                         if (!setPointPosition(trial, point, position))
                             continue;
                         auto trialErrors = evaluateErrors(trial, lengths, parallels, joins);
-                        if (!trialErrors || hasZeroLengthEdge(trial, lengths, parallels))
-                            continue;
-                        const auto trialNorm = scaledErrorNorm(*trialErrors, kinds, scale);
+                        const auto trialNorm = trialErrors && !hasZeroLengthEdge(trial, lengths, parallels)
+                            ? scaledErrorNorm(*trialErrors, kinds, scale) : std::nullopt;
                         if (trialNorm && *trialNorm < *currentNorm)
                         {
                             candidate = std::move(trial);
                             errors = std::move(*trialErrors);
                             return true;
                         }
+                        if (!setPointPosition(trial, point, *original))
+                            return false;
                     }
                 }
             }
@@ -848,6 +863,9 @@ namespace cad::solver::detail
             if (!currentNorm)
                 return {SolveStatus::NoConvergence, iterations};
 
+            // Every correction overwrites all variables relative to candidate, so
+            // rejected step sizes can reuse this document without copying its maps.
+            Document trial = candidate;
             bool accepted = false;
             for (unsigned attempt = 0; attempt < 10 && !accepted; ++attempt)
             {
@@ -859,7 +877,6 @@ namespace cad::solver::detail
                     double step = 1.0;
                     for (unsigned backtrack = 0; backtrack < 16; ++backtrack, step *= 0.5)
                     {
-                        Document trial = candidate;
                         if (!applyCorrection(trial, candidate, variables, *delta, *scale, step))
                             continue;
                         auto trialErrors = evaluateErrors(trial, lengths, parallels, *joins);

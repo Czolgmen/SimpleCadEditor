@@ -220,6 +220,116 @@ namespace
         requireSameCurveDocument(f.document, before);
     }
 
+    // Deliberately unoptimized reference: evaluate every row on a fresh document
+    // for every coordinate, without using the production dependency table.
+    std::optional<DenseMatrix> fullSamplingReference(
+        const Document& document,
+        std::span<const FixedLengthConstraint> lengths,
+        std::span<const ParallelConstraint> parallels,
+        std::span<const ContinuityJoin> joins,
+        std::span<const SolverPoint> variables,
+        std::span<const double> baseErrors,
+        double scale)
+    {
+        const auto kinds = buildResidualKinds(lengths.size(), parallels.size(), joins);
+        if (!kinds || kinds->size() != baseErrors.size()) return std::nullopt;
+        DenseMatrix matrix(baseErrors.size(), std::vector<double>(variables.size() * 2));
+        const double step = std::sqrt(std::numeric_limits<double>::epsilon()) * scale;
+        for (std::size_t point = 0; point < variables.size(); ++point)
+        for (std::size_t axis = 0; axis < 2; ++axis)
+        {
+            const auto original = getPointPosition(document, variables[point]);
+            if (!original) return std::nullopt;
+            Vec2 shifted = *original;
+            double& coordinate = axis == 0 ? shifted.x : shifted.y;
+            const double before = coordinate;
+            coordinate += step;
+            if (coordinate == before)
+                coordinate = std::nextafter(before, std::numeric_limits<double>::infinity());
+            const double actualStep = coordinate - before;
+            Document probe = document;
+            if (!setPointPosition(probe, variables[point], shifted)) return std::nullopt;
+            const auto errors = evaluateErrors(probe, lengths, parallels, joins);
+            if (!errors) return std::nullopt;
+            for (std::size_t row = 0; row < baseErrors.size(); ++row)
+            {
+                double difference = (*errors)[row] - baseErrors[row];
+                if ((*kinds)[row] == ResidualKind::G1)
+                    difference = std::remainder(difference, 2 * std::numbers::pi_v<double>);
+                const bool dimensional = (*kinds)[row] == ResidualKind::Length || (*kinds)[row] == ResidualKind::C1;
+                matrix[row][2 * point + axis] = difference / (dimensional ? actualStep : actualStep / scale);
+            }
+        }
+        return matrix;
+    }
+
+    void dependencySamplingMatchesFullMixedReference()
+    {
+        for (const double size : {1e-6, 1.0, 1e6})
+        {
+            Fixture f(true, true, size);
+            const std::array positions{Vec2{30 * size, 0}, Vec2{34 * size, 3 * size}, Vec2{34 * size, 9 * size}};
+            const Polygon other = *f.document.findPolygon(f.document.addPolygon(positions));
+            const std::array lengths{FixedLengthConstraint{f.polygon.edges[2], 5 * size},
+                FixedLengthConstraint{f.polygon.edges[3], 7 * size}, FixedLengthConstraint{other.edges[0], 4 * size}};
+            const std::array parallels{ParallelConstraint{f.polygon.edges[2], other.edges[0]},
+                ParallelConstraint{f.polygon.edges[3], other.edges[1]}};
+            const std::array joins{f.join(Continuity::G1),
+                ContinuityJoin{f.polygon.vertices[2], f.polygon.edges[1], f.polygon.edges[2], Continuity::C1},
+                f.join(Continuity::G0)};
+            std::vector<SolverPoint> variables;
+            for (const auto vertex : f.polygon.vertices) variables.emplace_back(vertex);
+            for (const auto vertex : other.vertices) variables.emplace_back(vertex);
+            for (const auto edge : {f.polygon.edges[0], f.polygon.edges[1]})
+            for (const auto point : {BezierControlPoint::First, BezierControlPoint::Second})
+                variables.emplace_back(ControlPointRef{edge, point});
+            variables.emplace_back(f.polygon.vertices[1]); // Repeated column, after other perturbations.
+            const auto errors = evaluateErrors(f.document, lengths, parallels, joins);
+            require(errors.has_value(), "Dependency fixture errors unavailable");
+            const auto expected = fullSamplingReference(f.document, lengths, parallels, joins, variables, *errors, 6 * size);
+            require(expected.has_value(), "Full reference sampling failed");
+            const Document before = f.document;
+            requireMatrix(computePointJacobian(f.document, lengths, parallels, joins, variables, *errors, 6 * size), *expected);
+            requireSameCurveDocument(f.document, before);
+        }
+    }
+
+    void unrelatedInvalidResidualsStillRejectSampling()
+    {
+        Fixture f;
+        const std::array positions{Vec2{30, 0}, Vec2{36, 0}, Vec2{30, 6}};
+        const auto id = f.document.findPolygon(f.document.addPolygon(positions))->vertices[0];
+        const std::array<SolverPoint, 1> variables{id};
+        const std::array baseErrors{0.0};
+        auto join = f.join(Continuity::G1);
+        join.outgoing = EdgeId{999999};
+        require(!computePointJacobian(f.document, {}, {}, std::span{&join, 1}, variables, baseErrors, 6),
+            "Unrelated malformed relation was skipped");
+        join = f.join(Continuity::G1);
+        require(f.document.moveControlPoint({f.polygon.edges[0], BezierControlPoint::Second}, {6, 0}),
+            "Unrelated zero tangent fixture failed");
+        const Document before = f.document;
+        require(!computePointJacobian(f.document, {}, {}, std::span{&join, 1}, variables, baseErrors, 6),
+            "Unrelated degenerate G1 was skipped");
+        requireSameCurveDocument(f.document, before);
+    }
+
+    void staleBaseErrorsRetainFullSamplingBehavior()
+    {
+        const Fixture f;
+        const std::array joins{f.join(Continuity::C1), f.join(Continuity::G1)};
+        // This opposite handle does not affect either join. A stale base vector
+        // must still produce the same finite differences as full sampling.
+        const std::array<SolverPoint, 1> variables{
+            ControlPointRef{f.polygon.edges[0], BezierControlPoint::First}};
+        auto errors = evaluateErrors(f.document, {}, {}, joins);
+        require(errors.has_value(), "Stale error fixture failed");
+        (*errors)[0] += 0.25;
+        const auto expected = fullSamplingReference(f.document, {}, {}, joins, variables, *errors, 6);
+        require(expected.has_value(), "Stale reference sampling failed");
+        requireMatrix(computePointJacobian(f.document, {}, {}, joins, variables, *errors, 6), *expected);
+    }
+
     void g0AndZeroColumnMatricesKeepCorrectDimensions()
     {
         const Fixture f;
@@ -246,7 +356,10 @@ namespace cad::tests
             TestCase{"angular differences wrap across both pi branches", angularDifferencesWrapAcrossBothPiBranches},
             TestCase{"invalid continuity inputs reject instead of dropping rows", invalidContinuityInputsRejectInsteadOfDroppingRows},
             TestCase{"zero direction in sample rejects without mutation", zeroDirectionInSampleRejectsWithoutMutation},
-            TestCase{"G0 and zero-column matrices retain dimensions", g0AndZeroColumnMatricesKeepCorrectDimensions}
+            TestCase{"G0 and zero-column matrices retain dimensions", g0AndZeroColumnMatricesKeepCorrectDimensions},
+            TestCase{"dependency sampling matches full mixed reference", dependencySamplingMatchesFullMixedReference},
+            TestCase{"unrelated invalid residuals still reject sampling", unrelatedInvalidResidualsStillRejectSampling},
+            TestCase{"stale base errors retain full sampling behavior", staleBaseErrorsRetainFullSamplingBehavior}
         };
         return tests;
     }

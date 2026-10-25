@@ -13,7 +13,8 @@ namespace cad::solver::detail
         const Document& document,
         std::span<const constraint::FixedLengthConstraint> constraints);
 
-    // Forward finite differences, sampled on independent document copies.
+    // Forward finite differences, sampled independently on a private working copy.
+    // Each perturbation is restored exactly before sampling another coordinate.
     // Rows: constraints. Columns: x0, y0, x1, y1, ... from variableVertices.
     // baseErrors are RAW errors, not divided by geometryScale.
     // Return d(error_i)/d(coordinate_j), or nullopt if sampling fails.

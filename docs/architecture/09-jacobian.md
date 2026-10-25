@@ -2,9 +2,9 @@
 
 [Spis treści](README.md)
 
-Prototyp solvera długości jest zaimplementowany w `cad_core/src/solver/ConstraintSolver.cpp`, a **`computeJacobian` w `cad_core/src/solver/Jacobian.cpp`** oblicza pochodne przez różnice skończone. Każda współrzędna jest próbkowana na osobnej kopii dokumentu. Nieudany pomiar zwraca `nullopt`, co solver traktuje jako brak zbieżności z zachowaniem dokumentu wejściowego. Solver jest uruchamiany przez `EditorSession` przy przeciąganiu wierzchołka i przy nadawaniu długości z menu PPM. Podczas przeciągania blokowany jest prowadzony punkt, a przy nadawaniu długości pierwszy koniec krawędzi.
+Solver jest zaimplementowany w `cad_core/src/solver/ConstraintSolver.cpp`, a **`computePointJacobian` w `cad_core/src/solver/Jacobian.cpp`** oblicza pochodne przez różnice skończone dla wierzchołków i uchwytów. Jedna prywatna kopia dokumentu jest używana do próbkowania, z dokładnym odtworzeniem pozycji po każdej próbie. Nieudany pomiar zwraca `nullopt`, co solver traktuje jako brak zbieżności z zachowaniem dokumentu wejściowego. Solver jest uruchamiany przez `EditorSession` podczas przeciągania oraz zmiany ograniczeń i rodzaju krawędzi. Prowadzony punkt pozostaje przypięty dokładnie.
 
-Wspólne obliczenia długości i równoległości udostępnia `computeConstraintJacobian`, wywoływany przez pętlę `solveConstraints`. `computeJacobian` zachowuje dotychczasową sygnaturę i wywołuje tę funkcję z pustą listą równoległości. Wspólny Jacobian i prawa strona układu używają tego samego skalowania. `Document` udostępnia już magazyn par; czyszczenie relacji przy zmianie topologii i UI równoległości pozostają kolejnymi etapami.
+Wspólne obliczenia długości i równoległości udostępnia `computeConstraintJacobian`. `computeJacobian` zachowuje dotychczasową sygnaturę i wywołuje tę funkcję z pustą listą równoległości. Oba adaptery delegują do `computePointJacobian`. Publiczna pętla uwzględnia również aktywne G1/C1 z dokumentu. Jacobian i prawa strona układu używają tego samego skalowania; `Length` i `C1` mają jednostki świata, a `Parallel` i `G1` są bezwymiarowe. Dla G1 zawijamy różnicę kątów przez granicę ±π.
 
 ## Co oznacza macierz
 
@@ -30,20 +30,22 @@ Dla `m` ograniczeń i `n` ruchomych wierzchołków wynik to `m` wierszy i `2*n` 
 
 1. Utwórz macierz wypełnioną zerami o rozmiarze `constraints.size()` na `2 * variableVertices.size()`.
 2. Dla każdego ruchomego wierzchołka wykonaj osobny pomiar X i Y. Kolumna X ma numer `2 * vertexIndex`, a Y `2 * vertexIndex + 1`.
-3. Odczytaj oryginalną pozycję i utwórz świeżą kopię `Document probe = document` na potrzeby danej kolumny.
+3. Odczytaj oryginalną pozycję. Kopię `Document probe = document` utwórz raz przed pętlą pomiarów.
 4. Zmień tylko mierzoną współrzędną o mały krok `sqrt(numeric_limits<double>::epsilon()) * geometryScale`. Niepoprawna skala, niedopasowana liczba błędów, nieskończone błędy bazowe albo krok, który sam uległ niedomiarowi do zera, powodują zwrot `nullopt`.
 5. Dodawanie odbywa się w `double`: jeśli nowa współrzędna jest równa starej mimo dodatniego kroku, użyj `std::nextafter(original, infinity)`, aby dostać najbliższą większą reprezentowalną liczbę. Jeśli przesunięcie lub nowa współrzędna są nieskończone albo krok jest zerowy, zwróć `nullopt`.
-6. Przesuń wierzchołek przez `probe.moveVertex(...)`. W razie niepowodzenia zwróć `nullopt`.
-7. Oblicz `sampleErrors = evaluateErrors(probe, constraints)`. Gdy nie ma wyniku, zwróć `nullopt`.
+6. Przesuń punkt przez `setPointPosition(probe, point, position)`. W razie niepowodzenia zwróć `nullopt`.
+7. Oblicz błędy relacji zależnych od tego punktu. Wszystkie relacje są wcześniej walidowane na dokumencie źródłowym. Nieudana ocena próbki oznacza `nullopt`. Wiersze niezależne pozostają zerowe.
 8. Wyznacz **rzeczywisty krok** jako `newCoordinate - originalCoordinate` i dla każdego ograniczenia wypełnij bieżącą kolumnę:
 
    ```text
    J[row][column] = (sampleErrors[row] - baseErrors[row]) / actualStep
    ```
 
-9. Sprawdź skończoność obliczonych elementów. Zwróć gotową macierz po wypełnieniu wszystkich kolumn.
+9. Sprawdź skończoność obliczonych elementów i przywróć dokładnie oryginalną pozycję punktu przed następną próbą. Zwróć gotową macierz po wypełnieniu wszystkich kolumn.
 
-Świeża kopia na każdą kolumnę zapobiega sumowaniu przesunięć: przy pomiarze Y zaczynamy od oryginalnej pozycji, a nie od punktu z wcześniej przesuniętym X. `nullopt` oznacza nieudany pomiar, a nie spełnione ograniczenie.
+Odtwarzanie pozycji zapobiega sumowaniu przesunięć: przy pomiarze Y zaczynamy od oryginalnej pozycji, a nie od punktu z wcześniej przesuniętym X. Lista zależności obejmuje końce odcinków oraz lokalne punkty wyznaczające styczne połączeń G1/C1. Niepoprawne relacje są odrzucane także wtedy, gdy nie zależą od żadnej podanej zmiennej. Gdy przekazane błędy bazowe różnią się od aktualnych, funkcja zachowuje pełne próbkowanie wszystkich wierszy. `nullopt` oznacza nieudany pomiar, a nie spełnione ograniczenie.
+
+Pętla solvera ponownie używa także dokumentu próbnego przy zmniejszaniu kroku. Każda poprawka zapisuje wszystkie zmienne względem tego samego kandydata, więc wcześniejsze odrzucone przesunięcia nie przechodzą do kolejnej próby. Pomocniczy krok wychodzący z prostopadłości odtwarza punkt po każdej nieudanej próbie. Iloczyn `J Jᵀ` wykorzystuje symetrię i ciągłą pamięć wierszy macierzy, ograniczając koszt odwołań do kontenerów w Debug. Tolerancje, liczba iteracji i zasady zatwierdzania pozostają takie same.
 
 W tej wersji są to różnice jednostronne. Dobór kroku jest przybliżeniem numerycznym; przy skrajnie dużej translacji i bardzo krótkich odcinkach rozdzielczość `double` ogranicza dokładność. Po uruchomieniu prototypu sprawdzimy również takie sceny i ewentualnie zastosujemy współrzędne lokalne lub różnice centralne.
 

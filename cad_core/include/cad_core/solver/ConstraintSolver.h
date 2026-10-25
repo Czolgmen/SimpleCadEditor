@@ -18,7 +18,7 @@ namespace cad::solver
     struct SolveOptions
     {
         double lengthTolerance = 1e-6; // World units.
-        unsigned maxIterations = 50;
+        unsigned maxIterations = 100;
         double parallelTolerance = 1e-6; // Absolute normalized cross product (sin of the angle).
         double g1Tolerance = 1e-6;
         double c1Tolerance = 1e-6;
