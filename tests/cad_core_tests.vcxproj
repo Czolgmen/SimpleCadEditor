@@ -90,11 +90,15 @@
     <ClCompile Include="solver\JacobianTests.cpp" />
     <ClCompile Include="core\DocumentTests.cpp" />
     <ClCompile Include="core\DocumentParallelTests.cpp" />
+    <ClCompile Include="core\EdgeConversionTests.cpp" />
+    <ClCompile Include="core\EdgeSamplingTests.cpp" />
     <ClCompile Include="core\DeleteVertexTests.cpp" />
     <ClCompile Include="core\SplitEdgeTests.cpp" />
     <ClCompile Include="core\ValidationTests.cpp" />
     <ClCompile Include="geometry\Vec2Tests.cpp" />
+    <ClCompile Include="geometry\BezierTests.cpp" />
     <ClCompile Include="editor\HitTesterTests.cpp" />
+    <ClCompile Include="editor\CurveHitTesterTests.cpp" />
     <ClCompile Include="editor\EditorSessionTests.cpp" />
     <ClCompile Include="editor\EditorParallelTests.cpp" />
     <ClCompile Include="editor\LengthInputTests.cpp" />

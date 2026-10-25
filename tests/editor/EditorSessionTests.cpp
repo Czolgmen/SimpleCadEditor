@@ -129,6 +129,14 @@ namespace
                 const Edge* after = actual.findEdge(edgeId);
                 require(after && after->id == before->id && after->start == before->start && after->end == before->end,
                     "Edge changed unexpectedly");
+                require(after->geometry.index() == before->geometry.index(), "Edge geometry type changed unexpectedly");
+                if (const auto* curve = std::get_if<CubicBezier>(&before->geometry))
+                {
+                    const auto& actualCurve = std::get<CubicBezier>(after->geometry);
+                    require(actualCurve.control1.x == curve->control1.x && actualCurve.control1.y == curve->control1.y &&
+                        actualCurve.control2.x == curve->control2.x && actualCurve.control2.y == curve->control2.y,
+                        "Bezier controls changed unexpectedly");
+                }
             }
         }
         require(actual.validate().empty(), "Session left an invalid document");
@@ -691,6 +699,126 @@ namespace
         requireDocument(session.document(), before);
     }
 
+    void selectedBezierConversionCleansRelatedConstraints()
+    {
+        const Document initial = parallelScene(true);
+        EditorSession session{initial};
+        const EdgeId edge = initial.getPolygons().begin()->second.edges[0];
+        require(session.selectAt({10, 0}, 0) && session.selection().edge == edge, "Conversion selection failed");
+        Document expected = initial;
+        require(expected.convertEdgeToBezier(edge), "Expected conversion failed");
+        require(session.convertSelectedEdgeToBezier(), "Selected edge conversion failed");
+        requireDocument(session.document(), expected);
+        require(session.selection().edge == edge && !session.selection().vertex && !session.selection().polygon,
+            "Conversion lost exclusive edge selection");
+        require(!session.selectedFixedLength(), "Conversion retained a length relation");
+    }
+
+    void selectedSegmentConversionKeepsEndpoints()
+    {
+        Fixture f;
+        f.session.selectAt({10, 0}, 0);
+        require(f.session.convertSelectedEdgeToBezier(), "Bezier fixture failed");
+        auto* edge = const_cast<Edge*>(f.session.document().findEdge(f.edge));
+        edge->geometry = CubicBezier{{-5, 14}, {27, -9}};
+        Document expected = f.session.document();
+        require(expected.convertEdgeToSegment(f.edge), "Expected segment conversion failed");
+        require(f.session.convertSelectedEdgeToSegment(), "Selected curve did not convert back");
+        requireDocument(f.session.document(), expected);
+        require(f.session.selection().edge == f.edge, "Conversion back lost the edge selection");
+    }
+
+    void conversionCommandsRequireEdgeSelection()
+    {
+        EditorSession empty;
+        require(!empty.convertSelectedEdgeToBezier() && !empty.convertSelectedEdgeToSegment(), "Empty session converted an edge");
+        Fixture f;
+        const Document before = f.session.document();
+        require(!f.session.convertSelectedEdgeToBezier() && !f.session.convertSelectedEdgeToSegment(), "Empty selection converted an edge");
+        require(f.session.pointerDown({0, 0}, 0), "Guard gesture failed");
+        require(!f.session.convertSelectedEdgeToBezier() && !f.session.convertSelectedEdgeToSegment() && f.session.isDragging(),
+            "Rejected conversion destroyed an unrelated gesture");
+        require(f.session.cancelInteraction(), "Rejected conversion lost the drag snapshot");
+        f.session.selectAt({10, 10}, 0);
+        require(!f.session.convertSelectedEdgeToBezier() && !f.session.convertSelectedEdgeToSegment() &&
+            f.session.selection().polygon == f.polygon, "Polygon conversion changed selection");
+        requireDocument(f.session.document(), before);
+    }
+
+    void rejectedConversionPreservesPendingSelection()
+    {
+        Fixture f;
+        f.session.selectAt({10, 0}, 0);
+        require(f.session.beginParallelSelection(), "Pending fixture failed");
+        const auto* edge = f.session.document().findEdge(f.edge);
+        auto* start = const_cast<Vertex*>(f.session.document().findVertex(edge->start));
+        auto* end = const_cast<Vertex*>(f.session.document().findVertex(edge->end));
+        start->position = {-std::numeric_limits<double>::max(), 0};
+        end->position = {std::numeric_limits<double>::max(), 0};
+        const Document before = f.session.document();
+        require(!f.session.convertSelectedEdgeToBezier(), "Overflowing controls accepted");
+        require(f.session.pendingParallelEdge() == f.edge && f.session.selection().edge == f.edge,
+            "Rejected conversion changed pending source or selection");
+        requireDocument(f.session.document(), before);
+    }
+
+    void successfulConversionCancelsPendingSelectionAndCommits()
+    {
+        Fixture f;
+        f.session.selectAt({10, 0}, 0);
+        require(f.session.beginParallelSelection() && f.session.convertSelectedEdgeToBezier(), "Pending conversion failed");
+        require(!f.session.pendingParallelEdge() && !f.session.isDragging(), "Conversion left an interaction active");
+        const Document committed = f.session.document();
+        require(!f.session.cancelInteraction(), "Conversion retained a cancellable snapshot");
+        f.session.escape();
+        requireDocument(f.session.document(), committed);
+    }
+
+    void repeatedConversionPreservesEditedHandles()
+    {
+        Fixture f;
+        f.session.selectAt({10, 0}, 0);
+        require(f.session.convertSelectedEdgeToBezier(), "Initial conversion failed");
+        auto* edge = const_cast<Edge*>(f.session.document().findEdge(f.edge));
+        edge->geometry = CubicBezier{{-8, 13}, {29, -4}};
+        const Document before = f.session.document();
+        require(f.session.convertSelectedEdgeToBezier() && f.session.convertSelectedEdgeToBezier(), "Repeated conversion failed");
+        requireDocument(f.session.document(), before);
+        require(f.session.selection().edge == f.edge, "Repeated conversion changed selection");
+    }
+
+    void curveDisablesLengthAndParallelUntilRestored()
+    {
+        Fixture f;
+        f.session.selectAt({10, 0}, 0);
+        require(f.session.selectedEdgeLength() == 20 && f.session.convertSelectedEdgeToBezier(), "Length availability fixture failed");
+        const Document curve = f.session.document();
+        require(!f.session.selectedEdgeLength() && !f.session.selectedFixedLength() &&
+            !f.session.beginParallelSelection() && !f.session.setSelectedEdgeLength(20),
+            "Bezier enabled a segment-only command");
+        require(!f.session.canSplitSelectedEdge() && !f.session.splitSelectedEdge(),
+            "Bezier enabled the segment-only split operation");
+        require(!f.session.pendingParallelEdge(), "Rejected parallel command started an interaction");
+        requireDocument(f.session.document(), curve);
+        require(f.session.convertSelectedEdgeToSegment() && f.session.selectedEdgeLength() == 20,
+            "Restored segment did not regain its length default");
+        require(f.session.canSplitSelectedEdge(), "Restored segment did not regain splitting");
+        require(f.session.beginParallelSelection(), "Restored segment could not start parallel selection");
+        f.session.cancelParallelSelection();
+        require(f.session.setSelectedEdgeLength(20), "Restored segment could not receive a length");
+    }
+
+    void segmentConversionNoOpPreservesRelations()
+    {
+        const Document initial = parallelScene(true);
+        EditorSession session{initial};
+        const EdgeId edge = initial.getPolygons().begin()->second.edges[0];
+        session.selectAt({10, 0}, 0);
+        require(session.convertSelectedEdgeToSegment() && session.convertSelectedEdgeToSegment(), "Segment no-op conversion failed");
+        requireDocument(session.document(), initial);
+        require(session.selection().edge == edge, "Segment no-op changed selection");
+    }
+
     void cancelledMotionPreservesCommittedTopology()
     {
         Fixture f;
@@ -709,6 +837,14 @@ namespace cad::tests
     std::span<const TestCase> editorSessionTests()
     {
         static const std::array tests{
+            TestCase{"selected Bezier conversion cleans related constraints", selectedBezierConversionCleansRelatedConstraints},
+            TestCase{"selected segment conversion keeps endpoints", selectedSegmentConversionKeepsEndpoints},
+            TestCase{"conversion commands require edge selection", conversionCommandsRequireEdgeSelection},
+            TestCase{"rejected conversion preserves pending selection", rejectedConversionPreservesPendingSelection},
+            TestCase{"successful conversion cancels pending selection and commits", successfulConversionCancelsPendingSelectionAndCommits},
+            TestCase{"repeated conversion preserves edited handles", repeatedConversionPreservesEditedHandles},
+            TestCase{"curve disables length and parallelism until restored", curveDisablesLengthAndParallelUntilRestored},
+            TestCase{"segment no-op preserves relations", segmentConversionNoOpPreservesRelations},
             TestCase{"parallel-only drag pins cursor and adapts related edges", parallelOnlyDragPinsCursorAndAdaptsRelatedEdges},
             TestCase{"mixed drag preserves grab offset across previews", mixedDragPreservesOffsetAndAllRelationsAcrossPreviews},
             TestCase{"rejected mixed drag preserves preview and resumes or commits", rejectedMixedDragPreservesPreviewAndCanResumeOrCommit},

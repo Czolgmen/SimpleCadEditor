@@ -78,9 +78,12 @@
     <ClInclude Include="include\cad_core\constraints\ParallelConstraint.h" />
     <ClInclude Include="include\cad_core\demo\DemoScene.hpp" />
     <ClInclude Include="include\cad_core\geometry\Vec2.h" />
+    <ClInclude Include="include\cad_core\geometry\Bezier.h" />
     <ClInclude Include="include\cad_core\model\Id.h" />
     <ClInclude Include="include\cad_core\model\Vertex.h" />
     <ClInclude Include="include\cad_core\model\Edge.h" />
+    <ClInclude Include="include\cad_core\model\EdgeGeometry.h" />
+    <ClInclude Include="include\cad_core\model\EdgeSampling.h" />
     <ClInclude Include="include\cad_core\model\Polygon.h" />
     <ClInclude Include="include\cad_core\model\Document.h" />
     <ClInclude Include="include\cad_core\model\Validation.h" />
@@ -93,7 +96,9 @@
     <ClCompile Include="src\constraints\ParallelConstraint.cpp" />
     <ClCompile Include="src\demo\DemoScene.cpp" />
     <ClCompile Include="src\geometry\Vec2.cpp" />
+    <ClCompile Include="src\geometry\Bezier.cpp" />
     <ClCompile Include="src\model\Document.cpp" />
+    <ClCompile Include="src\model\EdgeSampling.cpp" />
     <ClCompile Include="src\solver\ConstraintSolver.cpp" />
     <ClCompile Include="src\solver\DenseLinearAlgebra.cpp" />
     <ClCompile Include="src\solver\Jacobian.cpp" />

@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <variant>
 
 
 #define MAX_LOADSTRING 100
@@ -384,6 +385,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto edgeLength = state->editor.selectedEdgeLength();
         const UINT parallelFlags = MF_STRING | (edgeLength && *edgeLength > 0.0 ? MF_ENABLED : MF_GRAYED);
         const auto menuEdge = state->editor.selection().edge;
+        const auto* selectedEdge = menuEdge ? state->editor.document().findEdge(*menuEdge) : nullptr;
+        const bool isSegment = selectedEdge && std::holds_alternative<cad::LineSegment>(selectedEdge->geometry);
+        const bool isBezier = selectedEdge && std::holds_alternative<cad::CubicBezier>(selectedEdge->geometry);
+        const UINT toBezierFlags = MF_STRING | (isSegment ? MF_ENABLED : MF_GRAYED);
+        const UINT toSegmentFlags = MF_STRING | (isBezier ? MF_ENABLED : MF_GRAYED);
         std::vector<cad::EdgeId> parallelRemovalTargets;
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
@@ -393,7 +399,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             !AppendMenuW(menu, removeLengthFlags, IDM_REMOVE_FIXED_LENGTH, L"Usuń ograniczenie długości") ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
             !AppendMenuW(menu, parallelFlags, IDM_ADD_PARALLEL, L"Ustaw równoległość z...") ||
-            !appendParallelRemovalMenu(menu, state->editor, parallelRemovalTargets))
+            !appendParallelRemovalMenu(menu, state->editor, parallelRemovalTargets) ||
+            !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
+            !AppendMenuW(menu, toBezierFlags, IDM_CONVERT_TO_BEZIER, L"Zamień na Béziera") ||
+            !AppendMenuW(menu, toSegmentFlags, IDM_CONVERT_TO_SEGMENT, L"Zamień na odcinek"))
         {
             DestroyMenu(menu);
             return 0;
@@ -428,6 +437,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
+            case IDM_CONVERT_TO_BEZIER:
+            case IDM_CONVERT_TO_SEGMENT:
+            {
+                auto* state = getAppState(hWnd);
+                if (!state || !state->editor.selection().edge)
+                    return 0;
+                const bool converted = wmId == IDM_CONVERT_TO_BEZIER
+                    ? state->editor.convertSelectedEdgeToBezier()
+                    : state->editor.convertSelectedEdgeToSegment();
+                if (!converted)
+                {
+                    MessageBoxW(hWnd, L"Nie udało się zmienić typu krawędzi. Dokument nie został zmieniony.",
+                        L"Konwersja krawędzi", MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+                releaseMouseCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             case IDM_ADD_PARALLEL:
             {
                 auto* state = getAppState(hWnd);

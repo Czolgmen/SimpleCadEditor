@@ -1,6 +1,7 @@
 #include <editor/HitTester.h>
 
 #include <cad_core/model/Document.h>
+#include <cad_core/model/EdgeSampling.h>
 
 #include <algorithm>
 
@@ -61,13 +62,25 @@ namespace cad::editor
             if (!start || !end)
                 return false;
 
-            if ((start->position.y > point.y) != (end->position.y > point.y))
+            const auto points = sampleEdge(
+                edge->geometry,
+                start->position,
+                end->position);
+                        
+            for (std::size_t i = 1; i < points.size(); ++i)
             {
-                const double crossingX = 
-                    start->position.x + (point.y - start->position.y) * (end->position.x - start->position.x) / (end->position.y - start->position.y);
-
-                if (crossingX > point.x)
-                    inside = !inside;
+                const Vec2& a = points[i - 1];
+                const Vec2& b = points[i];
+            
+                if ((a.y > point.y) != (b.y > point.y))
+                {
+                    const double crossingX =
+                        a.x + (point.y - a.y) *
+                        (b.x - a.x) / (b.y - a.y);
+                
+                    if (crossingX > point.x)
+                        inside = !inside;
+                }
             }
 
         }
@@ -132,13 +145,24 @@ namespace cad::editor
                 if (!start || !end)
                     continue;
 
-                const double distanceSquared = pointSegmentDistanceSquared(
-                            worldPosition, start->position, end->position);
+                const auto points = sampleEdge(
+                    edge->geometry,
+                    start->position,
+                    end->position);
 
-                if (distanceSquared <= tolerance * tolerance && (!nearest || distanceSquared < bestDistanceSquared))
+                for (std::size_t i = 1; i < points.size(); ++i)
                 {
-                    nearest = edgeId;
-                    bestDistanceSquared = distanceSquared;
+                    const double distanceSquared = pointSegmentDistanceSquared(
+                        worldPosition,
+                        points[i - 1],
+                        points[i]);
+                    
+                    if (distanceSquared <= tolerance * tolerance &&
+                        (!nearest || distanceSquared < bestDistanceSquared))
+                    {
+                        nearest = edgeId;
+                        bestDistanceSquared = distanceSquared;
+                    }
                 }
             }
         }

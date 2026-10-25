@@ -2,6 +2,8 @@
 
 [Spis treści](README.md)
 
+Stan wdrożenia: model ma odcinek i `CubicBezier` z dwoma uchwytami, funkcję punktu oraz próbkowanie przyrostowe. Działają konwersje w dokumencie, sesji i menu PPM, czyszczenie ograniczeń odcinka oraz rysowanie krzywej, wieloboku kontrolnego i uchwytów. Renderer oraz testy krawędzi i wnętrza używają wspólnej łamanej z `sampleEdge`. Domyślne G1, pozostałe klasy ciągłości, trafianie i edycja uchwytów, podział de Casteljau i łuki opisane poniżej pozostają planem. Interfejs blokuje podział Béziera do czasu implementacji właściwego algorytmu.
+
 ## Wspólna reprezentacja
 
 Każda krawędź ma początek, koniec i geometrię: odcinek, sześcienny Bézier albo łuk okręgu. Wspólne funkcje geometrii udostępniają punkt i styczną dla parametru `t` w `[0,1]`, próbkowanie oraz pomocnicze obliczenia odległości. Nie wymagają dziedziczenia; przy trzech znanych typach wystarczy `std::variant`.

@@ -421,5 +421,52 @@ namespace cad {
         });
     }
 
+    bool Document::convertEdgeToBezier(EdgeId id)
+    {
+        auto it_edge = edges.find(id);
 
+        if (it_edge == edges.end())
+            return false;
+
+        if (std::holds_alternative<CubicBezier>(it_edge->second.geometry))
+            return true;
+
+        auto it_start = vertices.find(it_edge->second.start);
+        auto it_end = vertices.find(it_edge->second.end);
+        
+        if (it_start == vertices.end() || it_end == vertices.end())
+            return false;
+
+        if (!std::isfinite(it_start->second.position.x) || !std::isfinite(it_start->second.position.y) ||
+            !std::isfinite(it_end->second.position.x) || !std::isfinite(it_end->second.position.y))
+                return false;
+
+        const Vec2 p3 = it_end->second.position;
+        const Vec2 p0 = it_start->second.position;
+
+        const Vec2 direction = p3 - p0;
+
+        const Vec2 control1 = p0 + direction * (1.0/3.0);
+        const Vec2 control2 = p0 + direction * (2.0/3.0);
+
+        if (!std::isfinite(control1.x) || !std::isfinite(control1.y) || !std::isfinite(control2.x) || !std::isfinite(control2.y))
+            return false;
+
+        removeFixedLength(id);
+        removeParallelsForEdge(id);
+
+        it_edge->second.geometry = CubicBezier{control1, control2};
+
+        return true;
+    }
+    
+    bool Document::convertEdgeToSegment(EdgeId id)
+    {
+        auto it = edges.find(id);
+        if (it == edges.end())
+            return false;
+
+        it->second.geometry = LineSegment{};
+        return true;
+    }
 }

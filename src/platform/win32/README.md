@@ -60,6 +60,12 @@ Podmenu „Usuń równoległość” zawiera wyłącznie pary wskazanej krawędz
 
 Usunięcie jednej pary nie uruchamia solvera, nie przesuwa punktów i zachowuje długości oraz pozostałe pary. Przerysowanie usuwa jej oznaczenia i odświeża numerację ocalałych relacji.
 
+## Konwersja odcinek ↔ Bézier
+
+Menu PPM i Shift+F10 zawiera „Zamień na Béziera” dla zaznaczonego odcinka i „Zamień na odcinek” dla krzywej. Przy innym zaznaczeniu obie pozycje są nieaktywne. Udana konwersja zachowuje ID i zaznaczenie, kończy interakcję oraz zleca odmalowanie. Odrzucenie wyświetla komunikat i zachowuje dokument. Konwersja na Béziera usuwa długość oraz równoległości tej krawędzi; powrót nie odtwarza ich automatycznie.
+
+`GdiRenderer` używa wspólnego z hit testami `sampleEdge`: dla Béziera łączy domyślne 101 próbek w 100 odcinków, rysuje szary przerywany wielobok kontrolny i kwadratowe uchwyty o promieniu 5. Pióro pomocnicze jest tworzone raz na klatkę i zwalniane po przywróceniu poprzedniego pióra. Początkowe uchwyty leżą w jednej i dwóch trzecich odcinka, więc po konwersji geometria wygląda nadal jak prosta. Na Bézierze niedostępne są długość, rozpoczynanie równoległości i podział odcinka. Podział krzywej de Casteljau, trafianie i ruch uchwytów oraz ciągłość są kolejnymi etapami.
+
 ## Powiadomienie o odrzuconym ruchu
 
 Jeśli sesja odrzuci położenie podczas przeciągania, adapter pokazuje na dole sceny nieblokujący pasek: „Nie udało się uzyskać spójnego stanu. Zachowano ostatni poprawny stan. Spróbuj innego położenia.” Nie otwiera dialogu i nie zwalnia przechwycenia myszy, więc można kontynuować ruch. Poprawny podgląd usuwa powiadomienie. Przy puszczeniu przycisku na odrzuconym położeniu pasek pozostaje widoczny; znika po rozpoczęciu następnej operacji, Esc lub anulowaniu. Utrata fokusu i przechwycenia podczas gestu również go usuwa.

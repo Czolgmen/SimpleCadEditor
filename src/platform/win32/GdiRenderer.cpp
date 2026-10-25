@@ -1,7 +1,9 @@
 #include <platform/win32/GdiRenderer.h>
 
 #include <cad_core/model/Document.h>
+#include <cad_core/model/EdgeSampling.h>
 
+#include <variant>
 #include <cmath>
 #include <iomanip>
 #include <iterator>
@@ -27,12 +29,14 @@ namespace cad::win32
         HPEN normalPen = CreatePen(PS_SOLID, 2, RGB(0,0,0));
         HPEN selectedPen = CreatePen(PS_SOLID, 4, RGB(0,120,215));
         HPEN pendingPen = CreatePen(PS_SOLID, 4, RGB(220,120,0));
+        HPEN controlPen = CreatePen(PS_DASH, 1, RGB(140, 140, 140));
 
-        if (!normalPen || !selectedPen || !pendingPen)
+        if (!normalPen || !selectedPen || !pendingPen || !controlPen)
         {
             if (normalPen) DeleteObject(normalPen);
             if (selectedPen) DeleteObject(selectedPen);
             if (pendingPen) DeleteObject(pendingPen);
+            if (controlPen) DeleteObject(controlPen);
             return;
         }
 
@@ -59,8 +63,48 @@ namespace cad::win32
                     selectedPolygon == id || selectedEdge == IdEdge;
                 SelectObject(dc, pendingParallelEdge == IdEdge ? pendingPen : (highlighted ? selectedPen : normalPen));
 
+                const auto points = sampleEdge(
+                    ed->geometry,
+                    start->position,
+                    end->position);
+
                 MoveToEx(dc, p1.x, p1.y, nullptr);
-                LineTo(dc, p2.x, p2.y);
+
+                for (std::size_t i = 1; i < points.size(); ++i)
+                {
+                    const POINT point = worldToScreen(points[i], clientRect);
+                    LineTo(dc, point.x, point.y);
+                }
+
+                if (const auto* bezier = std::get_if<CubicBezier>(&ed->geometry))
+                {
+
+                    const POINT c1 = worldToScreen(bezier->control1, clientRect);
+                    const POINT c2 = worldToScreen(bezier->control2, clientRect);
+
+                    const POINT controlPolygon[]{p1, c1, c2, p2};
+
+                    const HGDIOBJ curvePen = SelectObject(dc, controlPen);
+                    const int previousBackground = SetBkMode(dc, TRANSPARENT);
+
+                    Polyline(dc, controlPolygon, 4);
+
+                    SetBkMode(dc, previousBackground);
+                    SelectObject(dc, normalPen);
+
+                    constexpr int radius = 5;
+
+                    for (const POINT control : {c1, c2})
+                    {
+                        Rectangle(dc,
+                            control.x - radius, control.y - radius,
+                            control.x + radius, control.y + radius);
+                    }
+
+                    SelectObject(dc, curvePen);
+
+                }
+
             }
 
             SelectObject(dc, normalPen);
@@ -145,5 +189,6 @@ namespace cad::win32
         DeleteObject(selectedPen);
         DeleteObject(pendingPen);
         DeleteObject(normalPen);
+        DeleteObject(controlPen);
     }
 }

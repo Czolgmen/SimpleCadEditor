@@ -51,6 +51,9 @@
     <ClInclude Include="include\cad_core\geometry\Vec2.h">
       <Filter>include\geometry</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\geometry\Bezier.h">
+      <Filter>include\geometry</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\model\Id.h">
       <Filter>include\model</Filter>
     </ClInclude>
@@ -58,6 +61,12 @@
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="include\cad_core\model\Edge.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="include\cad_core\model\EdgeGeometry.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="include\cad_core\model\EdgeSampling.h">
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="include\cad_core\model\Polygon.h">
@@ -92,7 +101,13 @@
     <ClCompile Include="src\geometry\Vec2.cpp">
       <Filter>src\geometry</Filter>
     </ClCompile>
+    <ClCompile Include="src\geometry\Bezier.cpp">
+      <Filter>src\geometry</Filter>
+    </ClCompile>
     <ClCompile Include="src\model\Document.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="src\model\EdgeSampling.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="src\solver\ConstraintSolver.cpp">

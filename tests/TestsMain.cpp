@@ -18,9 +18,13 @@ int main()
     const std::array suites{
         TestSuite{"Document", cad::tests::documentTests()},
         TestSuite{"DocumentParallel", cad::tests::documentParallelTests()},
+        TestSuite{"EdgeConversion", cad::tests::edgeConversionTests()},
+        TestSuite{"EdgeSampling", cad::tests::edgeSamplingTests()},
         TestSuite{"Vec2", cad::tests::vec2Tests()},
+        TestSuite{"Bezier", cad::tests::bezierTests()},
         TestSuite{"Validation", cad::tests::validationTests()},
         TestSuite{"HitTester", cad::tests::hitTesterTests()},
+        TestSuite{"CurveHitTester", cad::tests::curveHitTesterTests()},
         TestSuite{"SplitEdge", cad::tests::splitEdgeTests()},
         TestSuite{"DeleteVertex", cad::tests::deleteVertexTests()},
         TestSuite{"EditorSession", cad::tests::editorSessionTests()},

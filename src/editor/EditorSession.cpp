@@ -137,7 +137,11 @@ namespace cad::editor
 
     bool EditorSession::canSplitSelectedEdge() const
     {
-        return selection_.edge && document_.findEdge(*selection_.edge);
+        if (!selection_.edge)
+            return false;
+        const auto* edge = document_.findEdge(*selection_.edge);
+        // Bezier splitting needs de Casteljau; the current operation splits segments only.
+        return edge && std::holds_alternative<LineSegment>(edge->geometry);
     }
 
     bool EditorSession::canDeleteSelectedVertex() const
@@ -182,7 +186,7 @@ namespace cad::editor
         if (!selection_.edge)
             return std::nullopt;
         const auto* edge = document_.findEdge(*selection_.edge);
-        if (!edge)
+        if (!edge || !std::holds_alternative<LineSegment>(edge->geometry))
             return std::nullopt;
         const auto* start = document_.findVertex(edge->start);
         const auto* end = document_.findVertex(edge->end);
@@ -283,6 +287,30 @@ namespace cad::editor
     {
         if (!selection_.edge || !document_.removeParallel(*selection_.edge, other))
             return false;
+        cancelParallelSelection();
+        pointerUp();
+        return true;
+    }
+
+    bool EditorSession::convertSelectedEdgeToBezier()
+    {
+        if (!selection_.edge ||
+            !document_.convertEdgeToBezier(*selection_.edge))
+        {
+            return false;
+        }
+    
+        cancelParallelSelection();
+        pointerUp();
+        return true;
+    }
+
+    bool EditorSession::convertSelectedEdgeToSegment()
+    {
+        if (!selection_.edge ||
+            !document_.convertEdgeToSegment(*selection_.edge))
+            return false;
+
         cancelParallelSelection();
         pointerUp();
         return true;

@@ -117,7 +117,7 @@ Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co
 
 Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu źródłowego, który jest nieconst. Testy nie symulują błędów alokacji pamięci.
 
-[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 40 przypadków wykonywanych bez okna i bibliotek Windows:
+[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 48 przypadków wykonywanych bez okna i bibliotek Windows:
 
 - Priorytet i wyłączność zaznaczenia, kliknięcie tła, menu kontekstowe bez gestu i niemodyfikowalne wyniki odczytu.
 - Przeciąganie punktu z przesunięciem miejsca złapania i figury względem początku gestu, przy zachowaniu pozostałych obiektów.
@@ -168,4 +168,18 @@ Testy równoległości porównują skończone wyniki z tolerancją `1e-12`; dla 
 
 Sześć przypadków usuwania sprawdza wybór pierwszej, środkowej i ostatniej pary z obu pozycji argumentów, zachowanie geometrii, długości i pozostałych par oraz ponowne usunięcie. Odrzucone polecenie zachowuje zaznaczenie, przeciąganie i wybór drugiej krawędzi. Istniejącą parę można usunąć także po degeneracji kierunku, bez uruchamiania solvera. Sukces kończy wybór pary, a późniejsze anulowanie nie odtwarza usuniętej relacji. Przeciąganie po usunięciu respektuje pozostałe ograniczenia, lecz nie usuniętą parę; można ją później dodać ponownie.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia szesnaście zestawów i podaje wspólny wynik **326 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[BezierTests.cpp](geometry/BezierTests.cpp) zawiera 16 przypadków dla `bezierPoint` i przyrostowego `sampleBezier`. Obejmuje dokładne końce, znane punkty dla `t=0.25`, `0.5` i `0.75`, liczbę próbek `steps+1`, jeden odcinek oraz różne liczby kroków do 1024. Każda próbka jest porównywana z niezależnym skalarnym wzorem Bernsteina, bez współczynników bazy potęgowej i różnic progresywnych. Krzywe obejmują proste, wygięcia, zmiany kierunku, powtarzające się punkty kontrolne i zbieżne końce bez utraty wnętrza krzywej. Sprawdzane są też odwrócenie kolejności punktów, translacja i skale od `1e-90` do `1e90`, a dla `steps=0` wymagany jest `std::invalid_argument`.
+
+Porównania Béziera odrzucają nieskończone wyniki i używają tolerancji `1e-10` względem skali współrzędnych punktów kontrolnych. Końce sprawdzane są dokładnie. Testy dotyczą skończonych danych i `t` w `[0,1]`; nie określają polityki dla wejściowego NaN, przepełnienia współczynników ani liczby próbek przekraczającej możliwości kontenera.
+
+[EdgeConversionTests.cpp](core/EdgeConversionTests.cpp) zawiera 16 przypadków konwersji odcinek ↔ Bézier. Sprawdza położenie uchwytów w jednej i dwóch trzecich krawędzi, wszystkie pozycje w cyklu dwóch wielokątów, zachowanie ID, końców, pozostałych krzywych i topologii. Konwersja usuwa wyłącznie długość oraz wszystkie pary konwertowanej krawędzi, także między figurami i przy obu kolejnościach argumentów. Ponowna konwersja zachowuje zmodyfikowane uchwyty; powrót do odcinka nie odtwarza relacji, lecz pozwala nadać nowe. Oba ewaluatory i API dokumentu odrzucają ograniczenia na Bézierach, również początkowo prostych.
+
+Przypadki nieistniejących ID, brakujących końców, NaN, obu nieskończoności i przepełnienia obliczonych uchwytów sprawdzają pełne zachowanie dokumentu oraz magazynu relacji po odrzuceniu. Zbieżne końce dają obecnie stałą krzywą. Konwersje nie zużywają ID encji. Celowo uszkodzone końce, współrzędne i edytowane uchwyty są przygotowywane przez `const_cast` nieconst dokumentu wyłącznie w fixture testów; porównania obejmują też wariant geometrii i oba uchwyty. Testy nie obejmują jeszcze ciągłości G1/C1 ani konwersji w interfejsie.
+
+Osiem dodatkowych przypadków `EditorSessionTests` obejmuje konwersję zaznaczonej krawędzi i usuwanie jej relacji, powrót do odcinka, wymaganie zaznaczenia krawędzi, zachowanie interakcji po odrzuceniu oraz jej zakończenie po sukcesie. Ponowna konwersja zachowuje uchwyty, a operacja na istniejącym odcinku zachowuje relacje. Długość, rozpoczynanie równoległości i podział odcinka są niedostępne na Bézierze, lecz wracają po konwersji do odcinka. Porównanie dokumentów sesji obejmuje typ geometrii i oba uchwyty.
+
+[EdgeSamplingTests.cpp](core/EdgeSamplingTests.cpp) zawiera 5 przypadków wspólnego próbkowania: dwa końce odcinka, domyślne 101 próbek Béziera, żądaną liczbę kroków i znane punkty wewnętrzne, krzywą ze zbieżnymi końcami oraz odrzucenie zerowej liczby kroków dla Béziera. `steps` określa rozdzielczość krzywej; odcinek zawsze daje dwa końce.
+
+[CurveHitTesterTests.cpp](editor/CurveHitTesterTests.cpp) zawiera 15 przypadków trafiania w próbkowane krawędzie i wnętrza figur krzywoliniowych. Sprawdza punkty krzywej oddalone od cięciwy, trafienia między próbkami, odrzucenie samej cięciwy i wieloboku kontrolnego, tolerancję, globalny wybór najbliższej krawędzi i remisy. Testy wnętrza obejmują wybrzuszenie na zewnątrz, wcięcie do środka, obie orientacje i krzywą zamykającą, promień przez wierzchołki łamanej i styczność, kilka krzywych w jednym konturze oraz parzystość konturu obiegniętego dwukrotnie. Sprawdzane są też uszkodzone końce, wybór ostatniej zawierającej figury i różne skale oraz przesunięcia. Współrzędne uchwytów są ustawiane przez `const_cast` nieconst dokumentu wyłącznie w fixture, do czasu dodania API edycji uchwytów. Oczekiwania wnętrza dotyczą punktów poza brzegiem; testy korzystają z przybliżenia krzywej wspólnego z rendererem.
+
+[TestsMain.cpp](TestsMain.cpp) uruchamia dwadzieścia zestawów i podaje wspólny wynik **386 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

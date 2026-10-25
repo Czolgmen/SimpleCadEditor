@@ -13,7 +13,7 @@ namespace cad::constraint
         }
 
         const auto& edge = document.findEdge(constraint.edge);
-        if (!edge)
+        if (!edge || !std::holds_alternative<LineSegment>(edge->geometry))
         {
             return std::nullopt;
         }

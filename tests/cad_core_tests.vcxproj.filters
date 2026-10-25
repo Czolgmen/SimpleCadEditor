@@ -43,6 +43,12 @@
     <ClCompile Include="core\DocumentParallelTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\EdgeConversionTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\EdgeSamplingTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\DeleteVertexTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
@@ -55,7 +61,13 @@
     <ClCompile Include="geometry\Vec2Tests.cpp">
       <Filter>geometry</Filter>
     </ClCompile>
+    <ClCompile Include="geometry\BezierTests.cpp">
+      <Filter>geometry</Filter>
+    </ClCompile>
     <ClCompile Include="editor\HitTesterTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\CurveHitTesterTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\EditorSessionTests.cpp">

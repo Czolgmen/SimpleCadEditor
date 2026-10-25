@@ -44,6 +44,9 @@ namespace cad::editor
         // Removes only the pair (selected edge, other), without solving or moving geometry.
         bool removeSelectedEdgeParallel(EdgeId other);
 
+        bool convertSelectedEdgeToBezier();
+        bool convertSelectedEdgeToSegment();
+
     private:
         struct DragTransaction
         {

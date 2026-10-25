@@ -14,7 +14,7 @@ namespace cad::constraint
         const auto* first = document.findEdge(constraint.first);
         const auto* second = document.findEdge(constraint.second);
 
-        if (!first || !second)
+        if (!first || !second || !std::holds_alternative<LineSegment>(first->geometry) || !std::holds_alternative<LineSegment>(second->geometry))
             return std::nullopt;
 
 

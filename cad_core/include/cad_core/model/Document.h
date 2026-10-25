@@ -61,6 +61,10 @@ namespace cad
 
         void removeParallelsForEdge(EdgeId edge);
 
+        bool convertEdgeToBezier(EdgeId id);
+        bool convertEdgeToSegment(EdgeId id);
+        
+
     };
 
 }
