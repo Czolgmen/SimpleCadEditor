@@ -18,6 +18,8 @@ namespace cad
         Vec2 operator* (double k) const;
         std::optional<Vec2> operator/ (double k) const;
 
+        bool operator== (const Vec2& other) const = default;
+
         double Length() const;
         std::optional<Vec2> Normalized() const;
     };

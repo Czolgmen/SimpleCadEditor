@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 
 namespace
@@ -243,6 +244,61 @@ namespace
             requireNear(translated[i], original[i] + offset, coordinateScale(shifted));
     }
 
+    void splitHalvesPreserveParameterizationAcrossShapesAndScales()
+    {
+        for (const auto& base : curves)
+        for (const double scale : {1e-90, 1.0, 1e90})
+        {
+            const Curve curve = transformed(base, scale, {100 * scale, -30 * scale});
+            const auto split = cad::splitBezierHalf(curve[0], curve[1], curve[2], curve[3]);
+            requireExact(split.left[0], curve[0]);
+            requireExact(split.right[3], curve[3]);
+            requireExact(split.left[3], split.right[0]);
+            for (int i = 0; i <= 32; ++i)
+            {
+                const double t = i / 32.0;
+                requireNear(bernstein(split.left, t), bernstein(curve, t * 0.5), coordinateScale(curve));
+                requireNear(bernstein(split.right, t), bernstein(curve, (t + 1) * 0.5), coordinateScale(curve));
+            }
+        }
+    }
+
+    void splitMatchesKnownControlsAndRescalesEndpointDerivatives()
+    {
+        const Curve curve{Vec2{0, 0}, Vec2{0, 8}, Vec2{8, 8}, Vec2{8, 0}};
+        const auto split = cad::splitBezierHalf(curve[0], curve[1], curve[2], curve[3]);
+        const Curve left{Vec2{0, 0}, Vec2{0, 4}, Vec2{2, 6}, Vec2{4, 6}};
+        const Curve right{Vec2{4, 6}, Vec2{6, 6}, Vec2{8, 4}, Vec2{8, 0}};
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            requireExact(split.left[i], left[i]);
+            requireExact(split.right[i], right[i]);
+        }
+        requireExact((split.left[1] - split.left[0]) * 3, (curve[1] - curve[0]) * 1.5);
+        requireExact((split.right[3] - split.right[2]) * 3, (curve[3] - curve[2]) * 1.5);
+        requireExact((split.left[3] - split.left[2]) * 3, (split.right[1] - split.right[0]) * 3);
+    }
+
+    void splitAvoidsOverflowAtFiniteExtremeCoordinates()
+    {
+        const double maximum = std::numeric_limits<double>::max();
+        const std::array extremes{
+            Curve{Vec2{maximum, -maximum}, Vec2{maximum, -maximum},
+                Vec2{maximum, -maximum}, Vec2{maximum, -maximum}},
+            Curve{Vec2{maximum, maximum}, Vec2{-maximum, maximum},
+                Vec2{maximum, -maximum}, Vec2{-maximum, -maximum}}};
+        for (const auto& curve : extremes)
+        {
+            const auto split = cad::splitBezierHalf(curve[0], curve[1], curve[2], curve[3]);
+            for (const auto& half : {split.left, split.right})
+            for (const auto& point : half)
+                require(std::isfinite(point.x) && std::isfinite(point.y), "Finite split overflowed");
+            requireExact(split.left[0], curve[0]);
+            requireExact(split.right[3], curve[3]);
+            requireExact(split.left[3], split.right[0]);
+        }
+    }
+
     void zeroStepsThrowInvalidArgument()
     {
         for (const auto& curve : curves)
@@ -275,7 +331,10 @@ namespace cad::tests
             TestCase{"coincident endpoints retain the interior curve", coincidentEndpointsDoNotCollapseTheCurve},
             TestCase{"samples reverse with control order", samplesReverseWithControlOrder},
             TestCase{"samples support scales and translation", samplesSupportScalesAndTranslation},
-            TestCase{"zero sample steps throw invalid_argument", zeroStepsThrowInvalidArgument}
+            TestCase{"zero sample steps throw invalid_argument", zeroStepsThrowInvalidArgument},
+            TestCase{"split halves preserve parameterization across shapes and scales", splitHalvesPreserveParameterizationAcrossShapesAndScales},
+            TestCase{"split matches known controls and rescales endpoint derivatives", splitMatchesKnownControlsAndRescalesEndpointDerivatives},
+            TestCase{"split avoids overflow at finite extreme coordinates", splitAvoidsOverflowAtFiniteExtremeCoordinates}
         };
         return tests;
     }

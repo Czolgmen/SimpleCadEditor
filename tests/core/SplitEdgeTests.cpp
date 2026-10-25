@@ -1,6 +1,8 @@
 #include <cad_core/model/Document.h>
+#include <cad_core/geometry/Bezier.h>
 
 #include "../TestSupport.h"
+#include "../CurveTestSupport.h"
 
 #include <algorithm>
 #include <array>
@@ -121,6 +123,11 @@ namespace
         require(first && second && first->start == originalEdge.start && first->end == *result &&
                 second->start == *result && second->end == originalEdge.end,
             "Split halves have incorrect endpoints");
+        const bool curved = std::holds_alternative<CubicBezier>(originalEdge.geometry);
+        require(first->geometry.index() == originalEdge.geometry.index() &&
+            second->geometry.index() == originalEdge.geometry.index(), "Split changed the geometry type");
+        require(added->continuity == ContinuitySetting{curved ? Continuity::G1 : Continuity::G0,
+            ContinuitySource::Default}, "Split assigned incorrect midpoint continuity");
 
         const std::array removedConstraints{originalEdgeId};
         requireFixedLengthsAfterRemoving(document, before, removedConstraints);
@@ -132,6 +139,7 @@ namespace
             require(vertex && vertex->id == oldVertex->id &&
                     vertex->position.x == oldVertex->position.x && vertex->position.y == oldVertex->position.y,
                 "Split changed an original vertex");
+            require(vertex->continuity == oldVertex->continuity, "Split changed existing continuity metadata");
         }
         for (const EdgeId edgeId : original.edges)
         {
@@ -323,6 +331,139 @@ namespace
         }
     }
 
+    Vec2 edgePoint(const Document& document, EdgeId edgeId, double t)
+    {
+        const auto& edge = *document.findEdge(edgeId);
+        const auto& curve = std::get<CubicBezier>(edge.geometry);
+        return bezierPoint(document.findVertex(edge.start)->position, curve.control1,
+            curve.control2, document.findVertex(edge.end)->position, t);
+    }
+
+    void requireNear(Vec2 actual, Vec2 expected)
+    {
+        const double scale = (std::max)({1.0, std::abs(expected.x), std::abs(expected.y)});
+        require(std::hypot(actual.x - expected.x, actual.y - expected.y) <= 1e-10 * scale,
+            "Split changed the Bezier shape");
+    }
+
+    void splitsBezierAtEveryCyclePositionWithoutChangingOtherGeometry()
+    {
+        for (std::size_t index = 0; index < 4; ++index)
+        {
+            cad::tests::CurveTestScene scene;
+            auto& document = scene.document;
+            const Polygon original = scene.first;
+            const EdgeId divided = original.edges[index];
+            require(document.convertEdgeToBezier(divided), "Bezier split fixture conversion failed");
+            const auto* edge = document.findEdge(divided);
+            const Vec2 start = document.findVertex(edge->start)->position;
+            const Vec2 end = document.findVertex(edge->end)->position;
+            require(document.moveControlPoint({divided, BezierControlPoint::First}, start + Vec2{13, 30}) &&
+                document.moveControlPoint({divided, BezierControlPoint::Second}, end + Vec2{-9, 22}) &&
+                document.setContinuity(edge->start, Continuity::G0) &&
+                document.setContinuity(edge->end, Continuity::C1), "Bezier split fixture setup failed");
+            const Document before = document;
+            const VertexId midpoint = checkSplit(document, original.id, index, edgePoint(before, divided, 0.5));
+            const auto& updated = *document.findPolygon(original.id);
+            const EdgeId second = updated.edges[index + 1];
+            for (int i = 0; i <= 32; ++i)
+            {
+                const double t = i / 32.0;
+                requireNear(edgePoint(document, divided, t), edgePoint(before, divided, t * 0.5));
+                requireNear(edgePoint(document, second, t), edgePoint(before, divided, (t + 1) * 0.5));
+            }
+            for (const auto& [id, polygon] : before.getPolygons())
+            for (const EdgeId other : polygon.edges)
+            {
+                if (other == divided) continue;
+                const auto& a = document.findEdge(other)->geometry;
+                const auto& b = before.findEdge(other)->geometry;
+                require(a.index() == b.index(), "Unrelated geometry type changed");
+                if (const auto* curve = std::get_if<CubicBezier>(&b))
+                {
+                    const auto& actual = std::get<CubicBezier>(a);
+                    cad::tests::requireSameCurvePoint(actual.control1, curve->control1);
+                    cad::tests::requireSameCurvePoint(actual.control2, curve->control2);
+                }
+            }
+            const auto parallels = document.getParallelConstraints(), expected = before.getParallelConstraints();
+            require(parallels.size() == expected.size(), "Bezier split changed unrelated parallel count");
+            for (std::size_t i = 0; i < parallels.size(); ++i)
+                require(parallels[i].first == expected[i].first && parallels[i].second == expected[i].second,
+                    "Bezier split changed an unrelated parallel relation");
+            const auto followingId = document.addPolygon(triangle());
+            require(document.findPolygon(followingId)->vertices.front().value == midpoint.value + 1 &&
+                document.findPolygon(followingId)->edges.front().value == second.value + 1,
+                "Bezier split consumed incorrect IDs");
+        }
+    }
+
+    void repeatedBezierSplitsPreserveAllFourQuarters()
+    {
+        Document document;
+        const PolygonId polygonId = document.addPolygon(triangle());
+        const EdgeId original = document.findPolygon(polygonId)->edges[0];
+        require(document.convertEdgeToBezier(original) &&
+            document.moveControlPoint({original, BezierControlPoint::First}, {0, 8}) &&
+            document.moveControlPoint({original, BezierControlPoint::Second}, {8, 8}), "Quarter split fixture failed");
+        const Document before = document;
+        require(document.splitEdge(original).has_value(), "First Bezier split failed");
+        const EdgeId rightHalf = document.findPolygon(polygonId)->edges[1];
+        require(document.splitEdge(original).has_value() && document.splitEdge(rightHalf).has_value(),
+            "Repeated Bezier split failed");
+        const auto& polygon = *document.findPolygon(polygonId);
+        require(polygon.vertices.size() == 6 && polygon.edges.size() == 6 && document.validate().empty(),
+            "Repeated split invalidated the cycle");
+        for (int quarter = 0; quarter < 4; ++quarter)
+        for (int i = 0; i <= 16; ++i)
+        {
+            const double t = i / 16.0;
+            requireNear(edgePoint(document, polygon.edges[quarter], t), edgePoint(before, original, (quarter + t) / 4));
+        }
+    }
+
+    void invalidBezierControlsRejectWithoutMutationOrConsumedIds()
+    {
+        for (const double invalid : {std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()})
+        for (int coordinate = 0; coordinate < 4; ++coordinate)
+        {
+            cad::tests::CurveTestScene scene;
+            auto& document = scene.document;
+            const EdgeId divided = scene.first.edges[0];
+            auto& curve = std::get<CubicBezier>(const_cast<Edge*>(document.findEdge(divided))->geometry);
+            auto& control = coordinate < 2 ? curve.control1 : curve.control2;
+            (coordinate % 2 == 0 ? control.x : control.y) = invalid;
+            Document before = document;
+            require(!document.splitEdge(divided), "Non-finite Bezier control was split");
+            cad::tests::requireSameCurveDocument(document, before);
+            document.addPolygon(triangle());
+            before.addPolygon(triangle());
+            cad::tests::requireSameCurveDocument(document, before);
+        }
+    }
+
+    void splitsClosedConstantAndExtremeBeziers()
+    {
+        const double maximum = std::numeric_limits<double>::max();
+        const std::array curves{
+            std::array{Vec2{0, 0}, Vec2{10, 15}, Vec2{-10, 15}, Vec2{0, 0}},
+            std::array{Vec2{2, 3}, Vec2{2, 3}, Vec2{2, 3}, Vec2{2, 3}},
+            std::array{Vec2{maximum, -maximum}, Vec2{maximum, -maximum},
+                Vec2{maximum, -maximum}, Vec2{maximum, -maximum}}};
+        const std::array expected{Vec2{0, 11.25}, Vec2{2, 3}, Vec2{maximum, -maximum}};
+        for (std::size_t i = 0; i < curves.size(); ++i)
+        {
+            const auto& curve = curves[i];
+            Document document;
+            const std::array positions{curve[0], curve[3], Vec2{20, 20}};
+            const auto id = document.addPolygon(positions);
+            const auto edge = document.findPolygon(id)->edges[0];
+            const_cast<Edge*>(document.findEdge(edge))->geometry = CubicBezier{curve[1], curve[2]};
+            checkSplit(document, id, 0, expected[i]);
+        }
+    }
+
     void unconstrainedSplitPreservesAllExistingLengths()
     {
         const std::array midpoints{Vec2{5, 0}, Vec2{5, 5}, Vec2{0, 5}};
@@ -355,7 +496,11 @@ namespace cad::tests
             TestCase{"zero-length edge splits at its only position", splitsZeroLengthEdge},
             TestCase{"non-finite endpoint coordinates reject without mutation", rejectsNonFiniteEndpointCoordinates},
             TestCase{"constrained first, middle and closing splits clear only the divided edge's relation", constrainedSplitClearsOnlyTheDividedEdge},
-            TestCase{"unconstrained splits preserve all existing lengths", unconstrainedSplitPreservesAllExistingLengths}
+            TestCase{"unconstrained splits preserve all existing lengths", unconstrainedSplitPreservesAllExistingLengths},
+            TestCase{"Bezier splits at every cycle position preserve shape and other geometry", splitsBezierAtEveryCyclePositionWithoutChangingOtherGeometry},
+            TestCase{"repeated Bezier splits preserve all four quarters", repeatedBezierSplitsPreserveAllFourQuarters},
+            TestCase{"invalid Bezier controls reject without mutation or consumed IDs", invalidBezierControlsRejectWithoutMutationOrConsumedIds},
+            TestCase{"closed constant and extreme Beziers split correctly", splitsClosedConstantAndExtremeBeziers}
         };
         return tests;
     }

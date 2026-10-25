@@ -1,5 +1,7 @@
 #include <editor/EditorSession.h>
 #include <cad_core/constraints/ContinuityConstraint.h>
+#include <cad_core/geometry/Bezier.h>
+#include <cad_core/solver/ConstraintSolver.h>
 
 #include "../TestSupport.h"
 
@@ -840,8 +842,7 @@ namespace
         require(!f.session.selectedEdgeLength() && !f.session.selectedFixedLength() &&
             !f.session.beginParallelSelection() && !f.session.setSelectedEdgeLength(20),
             "Bezier enabled a segment-only command");
-        require(!f.session.canSplitSelectedEdge() && !f.session.splitSelectedEdge(),
-            "Bezier enabled the segment-only split operation");
+        require(f.session.canSplitSelectedEdge(), "Selected Bezier did not enable splitting");
         require(!f.session.pendingParallelEdge(), "Rejected parallel command started an interaction");
         requireDocument(f.session.document(), curve);
         const auto* edge = curve.findEdge(f.edge);
@@ -1061,6 +1062,336 @@ namespace
         require(session.selection().edge == edge, "Segment no-op changed selection");
     }
 
+    Vec2 curveMidpoint(const Document& document, EdgeId id)
+    {
+        const auto& edge = *document.findEdge(id);
+        const auto& curve = std::get<CubicBezier>(edge.geometry);
+        return bezierPoint(document.findVertex(edge.start)->position, curve.control1,
+            curve.control2, document.findVertex(edge.end)->position, 0.5);
+    }
+
+    void selectCurveForSplit(EditorSession& session, EdgeId id)
+    {
+        require(session.selectAt(curveMidpoint(session.document(), id), 0.1) &&
+            session.selection().edge == id && session.canSplitSelectedEdge(), "Curve split selection failed");
+    }
+
+    void requireCommittedSplit(const EditorSession& session, VertexId midpoint)
+    {
+        const auto& selected = session.selection();
+        require(selected.vertex == midpoint && !selected.edge && !selected.polygon && !selected.controlPoint,
+            "Split did not exclusively select the inserted vertex");
+        require(!session.isDragging() && !session.pendingParallelEdge(), "Successful split retained an interaction");
+        require(session.document().findVertex(midpoint)->continuity ==
+            ContinuitySetting{Continuity::G1, ContinuitySource::Default}, "Split lost default G1 at the new vertex");
+        requireAllRelationsSatisfied(session.document());
+    }
+
+    Document continuousSplitScene(Continuity continuity, bool crossPolygonParallel = false)
+    {
+        Document document = scene();
+        const auto first = document.getPolygons().begin()->second;
+        const auto other = document.getPolygons().rbegin()->second;
+        const_cast<Edge*>(document.findEdge(first.edges[0]))->geometry =
+            CubicBezier{{0, -20.0 / 3}, {20, -20.0 / 3}};
+        require(document.setContinuity(first.vertices[0], continuity) &&
+            document.setContinuity(first.vertices[1], continuity) &&
+            document.setFixedLength(first.edges[1], 20) && document.setFixedLength(other.edges[1], 20),
+            "Continuous split fixture failed");
+        if (crossPolygonParallel)
+            require(document.addParallel(first.edges[1], other.edges[1]), "Split parallel fixture failed");
+        requireAllRelationsSatisfied(document);
+        return document;
+    }
+
+    void g0CurveSplitsAtEveryCyclePositionWithoutChangingShape()
+    {
+        for (std::size_t index = 0; index < 4; ++index)
+        {
+            Document initial = scene();
+            const auto polygon = initial.getPolygons().begin()->second;
+            const EdgeId divided = polygon.edges[index];
+            const auto& edge = *initial.findEdge(divided);
+            const Vec2 start = initial.findVertex(edge.start)->position;
+            const Vec2 end = initial.findVertex(edge.end)->position;
+            const Vec2 delta = end - start;
+            const Vec2 normal{-delta.y * 0.5, delta.x * 0.5};
+            const_cast<Edge*>(initial.findEdge(divided))->geometry =
+                CubicBezier{start + delta * (1.0 / 3) + normal, end - delta * (1.0 / 3) + normal};
+            require(initial.setContinuity(edge.start, Continuity::G0) &&
+                initial.setContinuity(edge.end, Continuity::G0), "G0 split fixture failed");
+            EditorSession session{initial};
+            selectCurveForSplit(session, divided);
+            Document expected = initial;
+            const auto inserted = expected.splitEdge(divided);
+            require(inserted.has_value() && session.splitSelectedEdge(), "G0 Bezier split failed");
+            requireDocument(session.document(), expected);
+            requireCommittedSplit(session, *inserted);
+            require(!session.cancelInteraction(), "Committed split retained a cancellable gesture");
+            requireDocument(session.document(), expected);
+        }
+    }
+
+    void g1CurveSplitPreservesShapeLengthsAndCrossPolygonParallelism()
+    {
+        const Document initial = continuousSplitScene(Continuity::G1, true);
+        const auto& polygon = initial.getPolygons().begin()->second;
+        EditorSession session{initial};
+        selectCurveForSplit(session, polygon.edges[0]);
+        Document expected = initial;
+        const auto inserted = expected.splitEdge(polygon.edges[0]);
+        require(inserted.has_value() && session.splitSelectedEdge(), "Mixed G1 split failed");
+        requireDocument(session.document(), expected);
+        requireCommittedSplit(session, *inserted);
+    }
+
+    void c1CurveSplitRepairsBothLineJoinsWithMidpointPinned()
+    {
+        const Document initial = continuousSplitScene(Continuity::C1);
+        const auto& polygon = initial.getPolygons().begin()->second;
+        EditorSession session{initial};
+        selectCurveForSplit(session, polygon.edges[0]);
+        Document expected = initial;
+        const auto inserted = expected.splitEdge(polygon.edges[0]);
+        require(inserted.has_value(), "C1 model split failed");
+        const auto joins = collectContinuityJoins(expected);
+        require(joins.has_value(), "Raw C1 split topology invalid");
+        bool needsCorrection = false;
+        for (const auto& join : *joins)
+        {
+            const auto errors = constraint::continuityErrors(expected, join);
+            require(errors.has_value(), "Raw C1 split lost usable tangents");
+            for (const double error : *errors)
+                needsCorrection = needsCorrection || std::abs(error) > 1e-6;
+        }
+        require(needsCorrection, "C1 regression fixture does not require solving after subdivision");
+        require(session.splitSelectedEdge(), "C1 split did not converge");
+        requireSolvedConversion(session.document(), expected, polygon.id, *inserted);
+        requireCommittedSplit(session, *inserted);
+    }
+
+    void c1SplitRepairsAdjacentBezierJoin()
+    {
+        const Document initial = adjacentCurvesForConversion();
+        const auto& polygon = initial.getPolygons().begin()->second;
+        EditorSession session{initial};
+        selectCurveForSplit(session, polygon.edges[0]);
+        Document expected = initial;
+        const auto inserted = expected.splitEdge(polygon.edges[0]);
+        require(inserted.has_value() && session.splitSelectedEdge(), "Adjacent C1 Bezier split failed");
+        requireSolvedConversion(session.document(), expected, polygon.id, *inserted);
+        requireCommittedSplit(session, *inserted);
+    }
+
+    void requireTopologyCountersUnchanged(Document actual, Document expected)
+    {
+        const std::array positions{Vec2{300, 0}, Vec2{320, 0}, Vec2{300, 20}};
+        actual.addPolygon(positions);
+        expected.addPolygon(positions);
+        requireDocument(actual, expected);
+    }
+
+    void zeroTangentSplitRollsBackCurveSelectionAndIds()
+    {
+        Document initial = scene();
+        const auto polygon = initial.getPolygons().begin()->second;
+        const EdgeId divided = polygon.edges[0];
+        // At t=0.5 both half-curve tangents are exactly zero. The new G1 join
+        // cannot be evaluated, although the original G0 curve is valid.
+        const_cast<Edge*>(initial.findEdge(divided))->geometry = CubicBezier{{30, -10}, {10, -10}};
+        requireAllRelationsSatisfied(initial);
+        EditorSession session{initial};
+        selectCurveForSplit(session, divided);
+        Document raw = initial;
+        const auto inserted = raw.splitEdge(divided);
+        require(inserted.has_value(), "Zero-tangent model split unexpectedly failed");
+        const auto result = solver::solveConstraints(raw, {}, {}, *inserted);
+        require(result.status == solver::SolveStatus::InvalidInput, "Zero new G1 tangent was not rejected");
+        require(!session.splitSelectedEdge(), "Invalid G1 split was committed");
+        requireDocument(session.document(), initial);
+        require(session.selection().edge == divided && session.canSplitSelectedEdge() && !session.isDragging(),
+            "Rejected split changed the edge selection");
+        requireTopologyCountersUnchanged(session.document(), initial);
+    }
+
+    void nonconvergentSplitPreservesPendingSourceAndIds()
+    {
+        Document initial = scene();
+        const auto first = initial.getPolygons().begin()->second;
+        const std::array positions{Vec2{200, 0}, Vec2{210, 0}, Vec2{205, 10}};
+        const auto triangle = *initial.findPolygon(initial.addPolygon(positions));
+        // Deliberately supply a stored, unsatisfied system: a 10/10/30 triangle
+        // is impossible. This verifies rollback after solving, not a bad ID.
+        for (std::size_t i = 0; i < 3; ++i)
+            require(initial.setFixedLength(triangle.edges[i], i == 2 ? 30 : 10), "Conflict fixture failed");
+        require(initial.validate().empty(), "Conflict fixture has invalid references");
+        EditorSession session{initial};
+        require(session.selectAt({10, 0}, 0) && session.beginParallelSelection(), "Pending split fixture failed");
+        require(!session.splitSelectedEdge(), "Unsolvable split was committed");
+        requireDocument(session.document(), initial);
+        require(session.pendingParallelEdge() == first.edges[0] && session.selection().edge == first.edges[0] &&
+            !session.isDragging(), "Rejected split lost pending selection");
+        requireTopologyCountersUnchanged(session.document(), initial);
+        require(session.cancelInteraction() && !session.pendingParallelEdge(), "Pending selection could not be cancelled");
+        requireDocument(session.document(), initial);
+    }
+
+    void splitWithControlSelectionPreservesPreviewAndCancellation()
+    {
+        const Document initial = continuousSplitScene(Continuity::G0);
+        const auto& polygon = initial.getPolygons().begin()->second;
+        const Vec2 handle = std::get<CubicBezier>(initial.findEdge(polygon.edges[0])->geometry).control1;
+        EditorSession session{initial};
+        require(session.pointerDown(handle, 0) && session.pointerMove(handle + Vec2{5, -5}), "Control preview failed");
+        const Document preview = session.document();
+        require(!session.canSplitSelectedEdge() && !session.splitSelectedEdge() && session.isDragging(),
+            "Mismatched split destroyed the control gesture");
+        require(session.selection().controlPoint == ControlPointRef{polygon.edges[0], BezierControlPoint::First},
+            "Rejected split changed control selection");
+        requireDocument(session.document(), preview);
+        require(session.cancelInteraction(), "Rejected split lost the gesture snapshot");
+        requireDocument(session.document(), initial);
+    }
+
+    Document continuousDeletionScene(std::size_t removedIndex, Continuity continuity)
+    {
+        Document document = scene();
+        const auto polygon = document.getPolygons().begin()->second;
+        const auto other = document.getPolygons().rbegin()->second;
+        const auto curveIndex = (removedIndex + 1) % polygon.edges.size();
+        const auto& edge = *document.findEdge(polygon.edges[curveIndex]);
+        const auto previousIndex = (removedIndex + polygon.vertices.size() - 1) % polygon.vertices.size();
+        const Vec2 removed = document.findVertex(polygon.vertices[removedIndex])->position;
+        const Vec2 previous = document.findVertex(polygon.vertices[previousIndex])->position;
+        const Vec2 start = document.findVertex(edge.start)->position;
+        const Vec2 end = document.findVertex(edge.end)->position;
+        const_cast<Edge*>(document.findEdge(edge.id))->geometry =
+            CubicBezier{start + (start - removed) * (1.0 / 3), end - (previous - end) * (1.0 / 3)};
+        require(document.setContinuity(edge.start, continuity) && document.setContinuity(edge.end, continuity) &&
+            document.setFixedLength(polygon.edges[removedIndex], 20) &&
+            document.setFixedLength(polygon.edges[(curveIndex + 1) % polygon.edges.size()], 20) &&
+            document.setFixedLength(other.edges[0], 20), "Continuous deletion fixture failed");
+        requireAllRelationsSatisfied(document);
+        return document;
+    }
+
+    void deletionRepairsG1AndC1AcrossCycleWithPreviousVertexPinned()
+    {
+        for (const auto type : {Continuity::G1, Continuity::C1})
+        for (std::size_t index = 0; index < 4; ++index)
+        {
+            const Document initial = continuousDeletionScene(index, type);
+            const auto polygon = initial.getPolygons().begin()->second;
+            const VertexId removed = polygon.vertices[index];
+            const VertexId pinned = polygon.vertices[(index + polygon.vertices.size() - 1) % polygon.vertices.size()];
+            EditorSession session{initial};
+            require(session.selectAt(initial.findVertex(removed)->position, 0) &&
+                session.selection().vertex == removed, "Deletion vertex selection failed");
+            Document expected = initial;
+            require(expected.deleteVertex(removed), "Raw continuous deletion failed");
+            require(session.deleteSelectedVertex(), "Continuous deletion did not converge");
+            requireSolvedConversion(session.document(), expected, polygon.id, pinned);
+            require(!session.document().findVertex(removed), "Deleted vertex survived");
+            requireEmptySelection(session);
+            require(!session.selection().controlPoint && !session.isDragging() && !session.pendingParallelEdge(),
+                "Continuous deletion left an interaction");
+            const Document committed = session.document();
+            require(!session.cancelInteraction(), "Committed deletion retained a snapshot");
+            requireDocument(session.document(), committed);
+        }
+    }
+
+    void deletionRemovesOnlyAffectedMixedRelations()
+    {
+        for (std::size_t index = 0; index < 4; ++index)
+        {
+            const Document initial = parallelScene(true);
+            const auto polygon = initial.getPolygons().begin()->second;
+            const VertexId removed = polygon.vertices[index];
+            Document expected = initial;
+            require(expected.deleteVertex(removed), "Mixed deletion model fixture failed");
+            EditorSession session{initial};
+            require(session.selectAt(initial.findVertex(removed)->position, 0) && session.deleteSelectedVertex(),
+                "Mixed deletion failed");
+            requireDocument(session.document(), expected);
+            requireAllRelationsSatisfied(session.document());
+            requireEmptySelection(session);
+        }
+    }
+
+    void c1DeletionDuringDragCommitsCurrentPreview()
+    {
+        const Document initial = continuousDeletionScene(2, Continuity::C1);
+        const auto polygon = initial.getPolygons().begin()->second;
+        const VertexId removed = polygon.vertices[2];
+        const VertexId pinned = polygon.vertices[1];
+        EditorSession session{initial};
+        require(session.pointerDown(initial.findVertex(removed)->position, 0) && session.pointerMove({23, 24}),
+            "Continuous deletion preview failed");
+        Document expected = session.document();
+        require(expected.deleteVertex(removed), "Expected preview deletion failed");
+        require(session.deleteSelectedVertex(), "C1 deletion during a gesture failed");
+        requireSolvedConversion(session.document(), expected, polygon.id, pinned);
+        require(!session.isDragging() && !session.cancelInteraction(), "Successful deletion retained the old drag snapshot");
+        require(!session.document().findVertex(removed), "Cancellation restored a deleted vertex");
+        requireEmptySelection(session);
+    }
+
+    void invalidG1DeletionKeepsSelectionPreviewAndCancellation()
+    {
+        Document initial;
+        const std::array positions{Vec2{0, 0}, Vec2{10, 0}, Vec2{0, 0}, Vec2{0, 10}};
+        const auto polygon = *initial.findPolygon(initial.addPolygon(positions));
+        const VertexId removed = polygon.vertices[1];
+        const_cast<Edge*>(initial.findEdge(polygon.edges[2]))->geometry = CubicBezier{{-3, 0}, {2, 7}};
+        require(initial.setContinuity(polygon.vertices[2], Continuity::G1), "Degenerate deletion fixture failed");
+        requireAllRelationsSatisfied(initial);
+        for (const bool dragging : {false, true})
+        {
+            EditorSession session{initial};
+            if (dragging)
+                require(session.pointerDown({10, 0}, 0) && session.pointerMove({12, 0}), "Rejected deletion preview failed");
+            else
+                require(session.selectAt({10, 0}, 0), "Rejected deletion selection failed");
+            const Document preview = session.document();
+            Document raw = preview;
+            require(raw.deleteVertex(removed), "Degenerate model deletion failed");
+            // Neighbours coincide, so the new incoming segment has zero direction
+            // at an existing G1 join. The solver must reject this candidate.
+            const auto result = solver::solveConstraints(raw, {}, {}, polygon.vertices[0]);
+            require(result.status == solver::SolveStatus::InvalidInput, "Zero new G1 direction was not rejected");
+            require(!session.deleteSelectedVertex(), "Invalid G1 deletion was committed");
+            requireDocument(session.document(), preview);
+            require(session.selection().vertex == removed && session.isDragging() == dragging &&
+                session.canDeleteSelectedVertex(), "Rejected deletion changed selection or the gesture");
+            requireTopologyCountersUnchanged(session.document(), preview);
+            if (dragging)
+            {
+                require(session.pointerMove({14, 0}) && session.cancelInteraction(),
+                    "Rejected deletion prevented continued motion or cancellation");
+                requireDocument(session.document(), initial);
+            }
+        }
+    }
+
+    void nonconvergentDeletionKeepsVertexSelectionAndIds()
+    {
+        Document initial = scene();
+        const auto polygon = initial.getPolygons().begin()->second;
+        const VertexId removed = polygon.vertices[0];
+        const std::array positions{Vec2{200, 0}, Vec2{210, 0}, Vec2{205, 10}};
+        const auto triangle = *initial.findPolygon(initial.addPolygon(positions));
+        for (std::size_t i = 0; i < 3; ++i)
+            require(initial.setFixedLength(triangle.edges[i], i == 2 ? 30 : 10), "Unsolvable deletion fixture failed");
+        require(initial.validate().empty(), "Unsolvable deletion fixture has broken references");
+        EditorSession session{initial};
+        require(session.selectAt({0, 0}, 0) && session.canDeleteSelectedVertex(), "Unsolvable deletion selection failed");
+        require(!session.deleteSelectedVertex(), "Unsolvable deletion was committed");
+        requireDocument(session.document(), initial);
+        require(session.selection().vertex == removed && !session.isDragging(), "Unsolvable deletion lost selection");
+        requireTopologyCountersUnchanged(session.document(), initial);
+    }
+
     void cancelledMotionPreservesCommittedTopology()
     {
         Fixture f;
@@ -1136,7 +1467,19 @@ namespace cad::tests
             TestCase{"unsolved length edit preserves geometry and relations", unsolvedLengthEditPreservesGeometryAndRelations},
             TestCase{"length commands require edge selection", lengthCommandsRequireEdgeSelection},
             TestCase{"removing length restores free dragging", removingSelectedLengthRestoresFreeDragging},
-            TestCase{"setting the current length preserves geometry", settingCurrentLengthPreservesGeometry}
+            TestCase{"setting the current length preserves geometry", settingCurrentLengthPreservesGeometry},
+            TestCase{"G0 curve splits at every cycle position without changing shape", g0CurveSplitsAtEveryCyclePositionWithoutChangingShape},
+            TestCase{"G1 split preserves shape lengths and cross-polygon parallelism", g1CurveSplitPreservesShapeLengthsAndCrossPolygonParallelism},
+            TestCase{"C1 split repairs both line joins with midpoint pinned", c1CurveSplitRepairsBothLineJoinsWithMidpointPinned},
+            TestCase{"C1 split repairs adjacent Bezier join", c1SplitRepairsAdjacentBezierJoin},
+            TestCase{"zero-tangent split rolls back curve selection and IDs", zeroTangentSplitRollsBackCurveSelectionAndIds},
+            TestCase{"nonconvergent split preserves pending source and IDs", nonconvergentSplitPreservesPendingSourceAndIds},
+            TestCase{"split with control selection preserves preview and cancellation", splitWithControlSelectionPreservesPreviewAndCancellation},
+            TestCase{"deletion repairs G1 and C1 across cycle with previous vertex pinned", deletionRepairsG1AndC1AcrossCycleWithPreviousVertexPinned},
+            TestCase{"deletion removes only affected mixed relations", deletionRemovesOnlyAffectedMixedRelations},
+            TestCase{"C1 deletion during drag commits current preview", c1DeletionDuringDragCommitsCurrentPreview},
+            TestCase{"invalid G1 deletion keeps selection preview and cancellation", invalidG1DeletionKeepsSelectionPreviewAndCancellation},
+            TestCase{"nonconvergent deletion keeps vertex selection and IDs", nonconvergentDeletionKeepsVertexSelectionAndIds}
         };
         return tests;
     }

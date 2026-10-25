@@ -12,5 +12,9 @@ namespace cad
         Vec2 control2;
     };
 
-    using EdgeGeometry = std::variant<LineSegment, CubicBezier>;
+    struct CircularArc {
+        double bulge = 1.0;
+    };
+
+    using EdgeGeometry = std::variant<LineSegment, CubicBezier, CircularArc>;
 } // namespace cad

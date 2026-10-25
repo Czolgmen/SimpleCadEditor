@@ -28,6 +28,7 @@ namespace cad::tests
     std::span<const TestCase> continuityJoinsTests();
     std::span<const TestCase> vec2Tests();
     std::span<const TestCase> bezierTests();
+    std::span<const TestCase> arcTests();
     std::span<const TestCase> validationTests();
     std::span<const TestCase> hitTesterTests();
     std::span<const TestCase> curveHitTesterTests();

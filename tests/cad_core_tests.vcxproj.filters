@@ -85,6 +85,9 @@
     <ClCompile Include="geometry\BezierTests.cpp">
       <Filter>geometry</Filter>
     </ClCompile>
+    <ClCompile Include="geometry\ArcTests.cpp">
+      <Filter>geometry</Filter>
+    </ClCompile>
     <ClCompile Include="editor\HitTesterTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>

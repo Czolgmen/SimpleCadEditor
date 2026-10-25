@@ -45,6 +45,8 @@ namespace cad
         bool moveVertex(VertexId id, const Vec2& position);
         bool movePolygon(PolygonId id, const Vec2& delta);
         // Keeps the original edge ID for start -> midpoint; returns the new vertex ID.
+        // Segments split at their midpoint; Beziers at t=0.5 with shape preserved.
+        // A new Bezier join has default G1. Existing continuity is kept, not solved.
         std::optional<VertexId> splitEdge(EdgeId id);
         // Replaces both incident edges with a new segment; triangles cannot lose vertices.
         bool deleteVertex(VertexId id);

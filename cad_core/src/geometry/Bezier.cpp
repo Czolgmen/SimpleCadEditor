@@ -1,13 +1,22 @@
 #include <cad_core/geometry/Bezier.h>
 #include <stdexcept>
 #include <array>
+#include <numeric>
+
+namespace
+{
+    cad::Vec2 mid(const cad::Vec2& p0, const cad::Vec2& p1)
+    {
+        return {std::midpoint(p0.x, p1.x), std::midpoint(p0.y, p1.y)};
+    }
+}
 
 namespace cad
 {
     Vec2 bezierPoint(
-    const Vec2& p0, const Vec2& p1,
-    const Vec2& p2, const Vec2& p3,
-    double t)
+        const Vec2& p0, const Vec2& p1,
+        const Vec2& p2, const Vec2& p3,
+        double t)
     {
         // Zachowujemy dokładne końce mimo błędów zaokrągleń.
         if (t == 0.0) return p0;
@@ -26,6 +35,20 @@ namespace cad
         }
 
         return result;
+    }
+
+    BezierSplit splitBezierHalf(const Vec2 &p0, const Vec2 &p1, const Vec2 &p2, const Vec2 &p3)
+    {
+        const Vec2 a = mid(p0,p1);
+        const Vec2 b = mid(p1,p2);
+        const Vec2 c = mid(p2,p3);
+        
+        const Vec2 d = mid(a,b);
+        const Vec2 e = mid(b,c);
+        
+        const Vec2 m = mid(d,e);
+
+        return {{p0,a,d,m}, {m,e,c,p3}};
     }
 
     std::vector<Vec2> sampleBezier(const Vec2 &p0, const Vec2 &p1, const Vec2 &p2, const Vec2 &p3, std::size_t steps)
@@ -61,6 +84,5 @@ namespace cad
 
         points.back() = p3;
         return points;
-    }
-
-} // namespace cad
+    }        
+}

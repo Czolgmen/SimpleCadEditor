@@ -1,4 +1,5 @@
 #include <cad_core/model/Document.h>
+#include <cad_core/geometry/Bezier.h>
 #include <algorithm>
 #include <iterator>
 #include <numeric>
@@ -265,8 +266,31 @@ namespace cad {
             !std::isfinite(end.x) || !std::isfinite(end.y))
             return std::nullopt;
 
-        // std::midpoint avoids overflow when adding two large finite coordinates.
-        const Vec2 midpoint{std::midpoint(start.x, end.x), std::midpoint(start.y, end.y)};
+        Vec2 midpoint;
+        EdgeGeometry firstGeometry = LineSegment{};
+        EdgeGeometry secondGeometry = LineSegment{};
+        ContinuitySetting midpointContinuity;
+
+        if (const auto* bezier = std::get_if<CubicBezier>(&edgeIt->second.geometry))
+        {
+            if (!std::isfinite(bezier->control1.x) || !std::isfinite(bezier->control1.y) ||
+                !std::isfinite(bezier->control2.x) || !std::isfinite(bezier->control2.y))
+                return std::nullopt;
+
+            const auto split = splitBezierHalf(
+                start, bezier->control1, bezier->control2, end);
+
+            midpoint = split.left[3];
+            firstGeometry = CubicBezier{split.left[1], split.left[2]};
+            secondGeometry = CubicBezier{split.right[1], split.right[2]};
+            midpointContinuity = {Continuity::G1, ContinuitySource::Default};
+        }
+        else
+        {
+            // std::midpoint avoids overflow when adding large finite coordinates.
+            midpoint = {std::midpoint(start.x, end.x), std::midpoint(start.y, end.y)};
+        }
+
         const VertexId newVertexId{nextVertexId};
         const EdgeId newEdgeId{nextEdgeId};
 
@@ -277,10 +301,10 @@ namespace cad {
         updatedVertices.insert(updatedVertices.begin() + insertionOffset, newVertexId);
         updatedEdges.insert(updatedEdges.begin() + insertionOffset, newEdgeId);
 
-        vertices.emplace(newVertexId, Vertex{newVertexId, midpoint});
+        vertices.emplace(newVertexId, Vertex{newVertexId, midpoint, midpointContinuity});
         try
         {
-            edges.emplace(newEdgeId, Edge{newEdgeId, newVertexId, edgeIt->second.end});
+            edges.emplace(newEdgeId, Edge{newEdgeId, newVertexId, edgeIt->second.end, secondGeometry});
         }
         catch (...)
         {
@@ -291,6 +315,7 @@ namespace cad {
         removeParallelsForEdge(id);
         removeFixedLength(id);
         edgeIt->second.end = newVertexId;
+        edgeIt->second.geometry = firstGeometry;
         owner->vertices.swap(updatedVertices);
         owner->edges.swap(updatedEdges);
         ++nextVertexId;

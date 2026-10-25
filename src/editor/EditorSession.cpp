@@ -202,8 +202,9 @@ namespace cad::editor
         if (!selection_.edge)
             return false;
         const auto* edge = document_.findEdge(*selection_.edge);
-        // Bezier splitting needs de Casteljau; the current operation splits segments only.
-        return edge && std::holds_alternative<LineSegment>(edge->geometry);
+        return edge &&
+            (std::holds_alternative<LineSegment>(edge->geometry) ||
+             std::holds_alternative<CubicBezier>(edge->geometry));
     }
 
     bool EditorSession::canDeleteSelectedVertex() const
@@ -223,9 +224,23 @@ namespace cad::editor
     {
         if (!canSplitSelectedEdge())
             return false;
-        const auto vertex = document_.splitEdge(*selection_.edge);
+
+        Document candidate = document_;
+        const auto vertex = candidate.splitEdge(*selection_.edge);
         if (!vertex)
             return false;
+
+        const auto result = solver::solveConstraints(
+            candidate,
+            candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(),
+            *vertex
+        );
+
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
         cancelParallelSelection();
         pointerUp();
         selection_ = {};
@@ -235,8 +250,36 @@ namespace cad::editor
 
     bool EditorSession::deleteSelectedVertex()
     {
-        if (!canDeleteSelectedVertex() || !document_.deleteVertex(*selection_.vertex))
+        if (!canDeleteSelectedVertex())
             return false;
+
+        const VertexId removed = *selection_.vertex;
+        std::optional<VertexId> fixedVertex;
+        for (const auto& [id, polygon] : document_.getPolygons())
+        {
+            const auto position = std::find(polygon.vertices.begin(), polygon.vertices.end(), removed);
+            if (position == polygon.vertices.end())
+                continue;
+
+            // Save a surviving neighbour before the model removes the selected vertex.
+            fixedVertex = position == polygon.vertices.begin() ? polygon.vertices.back() : *(position - 1);
+            break;
+        }
+        if (!fixedVertex)
+            return false;
+
+        Document candidate = document_;
+        if (!candidate.deleteVertex(removed))
+            return false;
+        const auto result = solver::solveConstraints(
+            candidate,
+            candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(),
+            *fixedVertex);
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
         cancelParallelSelection();
         pointerUp();
         selection_ = {};

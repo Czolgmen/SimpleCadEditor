@@ -23,7 +23,13 @@ Program wypisuje wynik każdego przypadku oraz podsumowanie. Kod zakończenia `0
 
 ## Zakres
 
-Oddzielny [projekt `win32_tests`](win32_tests.vcxproj) zawiera [7 testów obsługi podglądu](platform/PointerPreviewTests.cpp). Używa rzeczywistej procedury `WndProc` i ukrytych okien Windows. Sprawdza zachowanie najnowszej próbki ze stu ruchów myszy, brak przeliczeń przed taktem, żądanie odmalowania, bezczynny timer, końcową pozycję przed i po podglądzie, anulowanie przez Esc, utratę fokusu lub przechwycenia, minimalizację, odrzucenie ruchu i wznowienie, spóźniony timer oraz awarię alokacji timera. Takty są dostarczane jawnie, bez oczekiwania na zegar systemowy. Ukryte okno nie jest rysowane przez system, więc test zlicza wywołania `UpdateWindow` i nadal deleguje je do WinAPI. Stan dokumentu jest porównywany z niezależnym gestem `EditorSession`. Tylko awaria `SetTimer` jest wymuszana. Te przypadki są osobne od 539 testów przenośnych i wymagają Windows.
+[ArcTests.cpp](geometry/ArcTests.cpp) zawiera 18 przypadków próbkowania ogólnych łuków. Liczba `steps+1` próbek, dokładne końce i jeden krok są sprawdzane także dla `bulge` o wartości bezwzględnej mniejszej i większej od 1. Zestaw obejmuje znane próbki półokręgu, ćwiartki okręgu i łuku 270°, punkt środkowy zgodny z wygięciem, wszystkie kierunki cięciwy oraz oba zwroty. Każdy punkt jest sprawdzany względem niezależnego wzoru na okrąg i strony cięciwy; kolejne próbki mają równy odstęp i poprawny zwrot. Odwrócenie końców wraz ze znakiem odtwarza tę samą krzywą w odwrotnej kolejności. Testy obejmują obroty, odbicia ze zmianą znaku wygięcia, translację i skale od `1e-90` do `1e90`. Zero kroków, zbieżne końce, zerowy lub nieskończony `bulge`, NaN i nieskończoności we współrzędnych oraz nieprzedstawialny środek, promień i próbki są odrzucane przez `invalid_argument`. Niemożliwa liczba próbek jest odrzucana przed alokacją przez `length_error`. Model łuku i ciągłość G1 pozostają kolejnym etapem.
+
+Pięć dodatkowych przypadków sesji obejmuje transakcyjne usuwanie wierzchołka: naprawę G1/C1 na każdej pozycji cyklu z dokładnym przypięciem poprzedniego sąsiada, usuwanie wyłącznie relacji znikających krawędzi oraz zatwierdzenie bieżącego podglądu C1 podczas przeciągania. Zerowy kierunek nowego odcinka przy G1 oraz niewykonalny układ długości odrzucają całą operację, zachowując wierzchołek, geometrię, metadane, zaznaczenie i liczniki ID. Odrzucenie w trakcie gestu pozwala kontynuować ruch i anulować go do pierwotnej migawki. Pozostałe relacje są sprawdzane niezależnie przez funkcje błędów.
+
+Siedem dodatkowych przypadków sesji sprawdza transakcyjny podział: G0 na każdej pozycji cyklu z zachowaniem kształtu, G1 wraz z długościami i równoległością między figurami, naprawę C1 przy sąsiednich odcinkach i Bézierach z dokładnie przypiętym nowym punktem oraz zaznaczenie nowego wierzchołka. Brak zbieżności zachowuje dokument, ID i oczekujący wybór równoległości. Zerowa styczna w nowym połączeniu G1 odrzuca podział bez zmian. Polecenie przy zaznaczonym uchwycie pozostawia aktywny podgląd i możliwość anulowania. Nie zakładamy zachowania kształtu po korekcie C1, ponieważ podział zmienia lokalną parametryzację.
+
+Oddzielny [projekt `win32_tests`](win32_tests.vcxproj) zawiera [7 testów obsługi podglądu](platform/PointerPreviewTests.cpp). Używa rzeczywistej procedury `WndProc` i ukrytych okien Windows. Sprawdza zachowanie najnowszej próbki ze stu ruchów myszy, brak przeliczeń przed taktem, żądanie odmalowania, bezczynny timer, końcową pozycję przed i po podglądzie, anulowanie przez Esc, utratę fokusu lub przechwycenia, minimalizację, odrzucenie ruchu i wznowienie, spóźniony timer oraz awarię alokacji timera. Takty są dostarczane jawnie, bez oczekiwania na zegar systemowy. Ukryte okno nie jest rysowane przez system, więc test zlicza wywołania `UpdateWindow` i nadal deleguje je do WinAPI. Stan dokumentu jest porównywany z niezależnym gestem `EditorSession`. Tylko awaria `SetTimer` jest wymuszana. Te przypadki są osobne od 576 testów przenośnych i wymagają Windows.
 
 [DocumentTests.cpp](core/DocumentTests.cpp) zawiera 35 przypadków obejmujących:
 
@@ -94,7 +100,7 @@ Publiczne operacje dokumentu nie tworzą tych uszkodzonych stanów. Fixture wali
 
 Testy hit testingu używają skończonych współrzędnych i tolerancji. Testy wielokątów sprawdzają punkty poza samym brzegiem; zasada zaznaczania punktów dokładnie na krawędzi lub w wierzchołku pozostaje do ustalenia. Nie testują komunikatów Windows, przechwytywania myszy ani rysowania zaznaczenia.
 
-[SplitEdgeTests.cpp](core/SplitEdgeTests.cpp) zawiera 11 przypadków obejmujących:
+[SplitEdgeTests.cpp](core/SplitEdgeTests.cpp) zawiera 15 przypadków obejmujących:
 
 - Podział pierwszej, środkowej i zamykającej krawędzi oraz ponowne dzielenie obu połówek.
 - Pozycję nowego wierzchołka, kolejność ID, połączenia krawędzi, zachowanie istniejących wierzchołków i pozostałych wielokątów oraz poprawne zużycie liczników ID.
@@ -106,6 +112,8 @@ Testy hit testingu używają skończonych współrzędnych i tolerancji. Testy w
 - Zachowanie wszystkich ograniczeń po odrzuceniu nieznanego ID, brakującego końca, braku właściciela, niepoprawnego połączenia i nieskończonych współrzędnych lub NaN. Istniejące przypadki odrzucenia zostały rozszerzone o magazyn relacji.
 
 Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co walidator. Testy nie symulują błędów alokacji pamięci.
+
+Cztery przypadki dotyczą podziału Béziera: każdej pozycji w cyklu, dwukrotnego podziału na cztery fragmenty, niepoprawnych uchwytów oraz krzywych ze zbieżnymi końcami, stałych i o skrajnych współrzędnych. Sprawdzają zachowanie kształtu dla odpowiednich podprzedziałów parametru, geometrii obu połówek, istniejących metadanych ciągłości, domyślne G1 nowego wierzchołka, niezależność pozostałych krzywych i relacji oraz zużycie ID. Odrzucenie NaN lub nieskończoności w dowolnej współrzędnej uchwytu zachowuje cały dokument i liczniki. Trzy dodatkowe przypadki w `BezierTests` porównują sam de Casteljau z niezależnym wzorem Bernsteina, znanymi punktami kontrolnymi i pochodnymi oraz sprawdzają brak przepełnienia dla skończonych danych. Model nie rozwiązuje ciągłości na zewnętrznych końcach po zmianie parametryzacji; integrację podziału z sesją i solverem sprawdzają przypadki EditorSessionTests.
 
 [DeleteVertexTests.cpp](core/DeleteVertexTests.cpp) zawiera 12 przypadków obejmujących:
 
@@ -119,7 +127,7 @@ Przypadki uszkodzonych odwołań używają tego samego testowego `const_cast` co
 
 Uszkodzone stany są tworzone wyłącznie w testach przez `const_cast` obiektu źródłowego, który jest nieconst. Testy nie symulują błędów alokacji pamięci.
 
-[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 58 przypadków wykonywanych bez okna i bibliotek Windows:
+[EditorSessionTests.cpp](editor/EditorSessionTests.cpp) zawiera 70 przypadków wykonywanych bez okna i bibliotek Windows:
 
 - Priorytet i wyłączność zaznaczenia, kliknięcie tła, menu kontekstowe bez gestu i niemodyfikowalne wyniki odczytu.
 - Przeciąganie punktu z przesunięciem miejsca złapania i figury względem początku gestu, przy zachowaniu pozostałych obiektów.
@@ -174,7 +182,7 @@ Trzy przypadki dotyczą bezpośrednio `SolverPoint`: przeplatanych kolumn obu uc
 
 Sześć przypadków usuwania sprawdza wybór pierwszej, środkowej i ostatniej pary z obu pozycji argumentów, zachowanie geometrii, długości i pozostałych par oraz ponowne usunięcie. Odrzucone polecenie zachowuje zaznaczenie, przeciąganie i wybór drugiej krawędzi. Istniejącą parę można usunąć także po degeneracji kierunku, bez uruchamiania solvera. Sukces kończy wybór pary, a późniejsze anulowanie nie odtwarza usuniętej relacji. Przeciąganie po usunięciu respektuje pozostałe ograniczenia, lecz nie usuniętą parę; można ją później dodać ponownie.
 
-[BezierTests.cpp](geometry/BezierTests.cpp) zawiera 16 przypadków dla `bezierPoint` i przyrostowego `sampleBezier`. Obejmuje dokładne końce, znane punkty dla `t=0.25`, `0.5` i `0.75`, liczbę próbek `steps+1`, jeden odcinek oraz różne liczby kroków do 1024. Każda próbka jest porównywana z niezależnym skalarnym wzorem Bernsteina, bez współczynników bazy potęgowej i różnic progresywnych. Krzywe obejmują proste, wygięcia, zmiany kierunku, powtarzające się punkty kontrolne i zbieżne końce bez utraty wnętrza krzywej. Sprawdzane są też odwrócenie kolejności punktów, translacja i skale od `1e-90` do `1e90`, a dla `steps=0` wymagany jest `std::invalid_argument`.
+[BezierTests.cpp](geometry/BezierTests.cpp) zawiera 19 przypadków dla `bezierPoint` i przyrostowego `sampleBezier`. Obejmuje dokładne końce, znane punkty dla `t=0.25`, `0.5` i `0.75`, liczbę próbek `steps+1`, jeden odcinek oraz różne liczby kroków do 1024. Każda próbka jest porównywana z niezależnym skalarnym wzorem Bernsteina, bez współczynników bazy potęgowej i różnic progresywnych. Krzywe obejmują proste, wygięcia, zmiany kierunku, powtarzające się punkty kontrolne i zbieżne końce bez utraty wnętrza krzywej. Sprawdzane są też odwrócenie kolejności punktów, translacja i skale od `1e-90` do `1e90`, a dla `steps=0` wymagany jest `std::invalid_argument`.
 
 Porównania Béziera odrzucają nieskończone wyniki i używają tolerancji `1e-10` względem skali współrzędnych punktów kontrolnych. Końce sprawdzane są dokładnie. Testy dotyczą skończonych danych i `t` w `[0,1]`; nie określają polityki dla wejściowego NaN, przepełnienia współczynników ani liczby próbek przekraczającej możliwości kontenera.
 
@@ -182,7 +190,7 @@ Porównania Béziera odrzucają nieskończone wyniki i używają tolerancji `1e-
 
 Przypadki nieistniejących ID, brakujących końców, NaN, obu nieskończoności i przepełnienia obliczonych uchwytów sprawdzają pełne zachowanie dokumentu oraz magazynu relacji po odrzuceniu. Zbieżne końce dają obecnie stałą krzywą. Konwersje nie zużywają ID encji. Celowo uszkodzone końce, współrzędne i edytowane uchwyty są przygotowywane przez `const_cast` nieconst dokumentu wyłącznie w fixture testów; porównania obejmują też wariant geometrii i oba uchwyty. Testy nie obejmują jeszcze ciągłości G1/C1 ani konwersji w interfejsie.
 
-Osiem dodatkowych przypadków `EditorSessionTests` obejmuje konwersję zaznaczonej krawędzi i usuwanie jej relacji, powrót do odcinka, wymaganie zaznaczenia krawędzi, zachowanie interakcji po odrzuceniu oraz jej zakończenie po sukcesie. Ponowna konwersja zachowuje uchwyty, a operacja na istniejącym odcinku zachowuje relacje. Długość, rozpoczynanie równoległości i podział odcinka są niedostępne na Bézierze, lecz wracają po konwersji do odcinka. Porównanie dokumentów sesji obejmuje typ geometrii i oba uchwyty.
+Osiem dodatkowych przypadków `EditorSessionTests` obejmuje konwersję zaznaczonej krawędzi i usuwanie jej relacji, powrót do odcinka, wymaganie zaznaczenia krawędzi, zachowanie interakcji po odrzuceniu oraz jej zakończenie po sukcesie. Ponowna konwersja zachowuje uchwyty, a operacja na istniejącym odcinku zachowuje relacje. Długość i rozpoczynanie równoległości są niedostępne na Bézierze, lecz wracają po konwersji do odcinka. Wybrany Bézier umożliwia podział. Porównanie dokumentów sesji obejmuje typ geometrii i oba uchwyty.
 
 [EdgeSamplingTests.cpp](core/EdgeSamplingTests.cpp) zawiera 5 przypadków wspólnego próbkowania: dwa końce odcinka, domyślne 101 próbek Béziera, żądaną liczbę kroków i znane punkty wewnętrzne, krzywą ze zbieżnymi końcami oraz odrzucenie zerowej liczby kroków dla Béziera. `steps` określa rozdzielczość krzywej; odcinek zawsze daje dwa końce.
 
@@ -218,4 +226,4 @@ Osiem dodatkowych przypadków `ContinuitySolverTests` sprawdza preferencję nier
 
 Trzy kolejne przypadki solvera sprawdzają oddzielny budżet preferencji końców: trudną scenę dwóch krzywoliniowych wielokątów ze stałymi długościami i dwiema równoległościami między figurami, wyłączenie preferencji oraz limit mniejszy i większy od całkowitego budżetu. Przypadek sesji sprawdza przeciąganie trzech uchwytów tej sceny, dokładne przypięcie do kursora, spełnienie wszystkich relacji oraz anulowanie. Testy nie stawiają zależnych od maszyny wymagań czasowych; regresję wykrywają przez wyczerpanie pierwszego budżetu i sukces drugiej próby.
 
-[TestsMain.cpp](TestsMain.cpp) uruchamia dwadzieścia dziewięć zestawów i podaje wspólny wynik **539 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.
+[TestsMain.cpp](TestsMain.cpp) uruchamia trzydzieści zestawów i podaje wspólny wynik **576 testów**. [TestSupport.h](TestSupport.h) zawiera wspólny typ przypadku testowego oraz sprawdzenia działające w Debug i Release.

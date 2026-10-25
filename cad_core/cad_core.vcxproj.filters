@@ -57,6 +57,9 @@
     <ClInclude Include="include\cad_core\geometry\Bezier.h">
       <Filter>include\geometry</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\geometry\Arc.h">
+      <Filter>include\geometry</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\model\Id.h">
       <Filter>include\model</Filter>
     </ClInclude>
@@ -123,6 +126,9 @@
       <Filter>src\geometry</Filter>
     </ClCompile>
     <ClCompile Include="src\geometry\Bezier.cpp">
+      <Filter>src\geometry</Filter>
+    </ClCompile>
+    <ClCompile Include="src\geometry\Arc.cpp">
       <Filter>src\geometry</Filter>
     </ClCompile>
     <ClCompile Include="src\model\Document.cpp">

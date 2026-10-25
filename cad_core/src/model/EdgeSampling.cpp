@@ -1,6 +1,7 @@
 #include <cad_core/model/EdgeSampling.h>
 
 #include <cad_core/geometry/Bezier.h>
+#include <cad_core/geometry/Arc.h>
 
 namespace cad
 {
@@ -11,10 +12,15 @@ namespace cad
             const auto& bezier = std::get<CubicBezier>(geometry);
 
             return sampleBezier(start, bezier.control1, bezier.control2, end, steps);
-        } else 
+        } if (const auto* arc = std::get_if<CircularArc>(&geometry))
+        {
+            return sampleArc(start, end, arc->bulge, steps);
+        } 
+        else 
         {
             return {start, end};
         }
     }
+
 
 } // namespace cad

@@ -38,13 +38,13 @@ Esc anuluje ruch do stanu sprzed gestu; poza gestem usuwa zaznaczenie. Nieoczeki
 
 Kliknięcie PPM w obszarze rysowania wskazuje element w kolejności: wierzchołek, krawędź, wnętrze wielokąta. Otwiera menu kontekstowe z poleceniem „Podziel krawędź”, aktywnym dla zaznaczonej krawędzi. PPM na pustym tle usuwa zaznaczenie i pokazuje nieaktywne polecenie. Shift+F10 otwiera menu dla bieżącego zaznaczenia bez zmiany wskazanego elementu.
 
-Polecenie wywołuje `EditorSession::splitSelectedEdge`, która korzysta z `Document::splitEdge`. Po sukcesie sesja kończy gest i zaznacza nowy wierzchołek, a adapter zwalnia przechwycenie myszy i zleca przerysowanie. Podział następuje w połowie boku, niezależnie od miejsca kliknięcia na nim. Utworzone menu jest zwalniane przez `DestroyMenu` po jego zamknięciu.
+Polecenie wywołuje `EditorSession::splitSelectedEdge`, która korzysta z `Document::splitEdge`. Po sukcesie sesja kończy gest i zaznacza nowy wierzchołek, a adapter zwalnia przechwycenie myszy i zleca przerysowanie. Odcinek jest dzielony w połowie, a Bézier dla t=0.5 algorytmem de Casteljau, niezależnie od miejsca kliknięcia. Sesja przypina nowy punkt i rozwiązuje relacje przed zatwierdzeniem; przy niepowodzeniu zachowuje dokument i zaznaczenie. Utworzone menu jest zwalniane przez `DestroyMenu` po jego zamknięciu.
 
 ## Usuwanie wierzchołka
 
 Zaznaczony wierzchołek można usunąć klawiszem Delete albo poleceniem „Usuń wierzchołek” w menu PPM. Polecenie jest aktywne dla wierzchołka figury mającej więcej niż trzy punkty. Delete przy innym zaznaczeniu lub na trójkącie nie zmienia dokumentu; pozycja menu jest wtedy nieaktywna.
 
-Adapter wywołuje `EditorSession::deleteSelectedVertex`. Sesja korzysta z `Document::deleteVertex`, które usuwa punkt i obie dochodzące krawędzie, łączy sąsiadów nowym odcinkiem i zachowuje kolejność pozostałych elementów. Po sukcesie sesja czyści zaznaczenie i kończy gest, a adapter zwalnia przechwycenie myszy i zleca przerysowanie.
+Adapter wywołuje `EditorSession::deleteSelectedVertex`. Sesja korzysta z `Document::deleteVertex`, które usuwa punkt i obie dochodzące krawędzie, łączy sąsiadów nowym odcinkiem i zachowuje kolejność pozostałych elementów. Usunięcie jest wykonywane na kopii dokumentu, a następnie solver rozwiązuje pozostałe relacje z poprzednim sąsiadem przypiętym w dotychczasowym miejscu. Dopiero po zbieżności sesja zatwierdza dokument, czyści zaznaczenie i kończy gest, a adapter zwalnia przechwycenie myszy i zleca przerysowanie. Nieudane rozwiązanie nie usuwa wierzchołka.
 
 ## Stała długość krawędzi
 
@@ -66,7 +66,7 @@ Usunięcie jednej pary nie uruchamia solvera, nie przesuwa punktów i zachowuje 
 
 Menu PPM i Shift+F10 zawiera „Zamień na Béziera” dla zaznaczonego odcinka i „Zamień na odcinek” dla krzywej. Przy innym zaznaczeniu obie pozycje są nieaktywne. Udana konwersja zachowuje ID i zaznaczenie, kończy interakcję oraz zleca odmalowanie. Odrzucenie wyświetla komunikat i zachowuje dokument. Konwersja na Béziera usuwa długość oraz równoległości tej krawędzi; powrót nie odtwarza ich automatycznie.
 
-`GdiRenderer` używa wspólnego z hit testami `sampleEdge`: dla Béziera łączy domyślne 101 próbek w 100 odcinków, rysuje szary przerywany wielobok kontrolny i kwadratowe uchwyty o promieniu 5. Pióro pomocnicze jest tworzone raz na klatkę i zwalniane po przywróceniu poprzedniego pióra. Początkowe uchwyty leżą w jednej i dwóch trzecich odcinka, więc po konwersji geometria wygląda nadal jak prosta. Na Bézierze niedostępne są długość, rozpoczynanie równoległości i podział odcinka. LPM wybiera uchwyt przed wierzchołkiem i rozpoczyna jego przeciąganie; wybrany uchwyt ma niebieski obrys. Esc i utrata przechwycenia odtwarzają poprzednią geometrię. Przesuwanie całej figury obejmuje jej uchwyty. Podział krzywej de Casteljau i ciągłość są kolejnymi etapami.
+`GdiRenderer` używa wspólnego z hit testami `sampleEdge`: dla Béziera łączy domyślne 101 próbek w 100 odcinków, rysuje szary przerywany wielobok kontrolny i kwadratowe uchwyty o promieniu 5. Pióro pomocnicze jest tworzone raz na klatkę i zwalniane po przywróceniu poprzedniego pióra. Początkowe uchwyty leżą w jednej i dwóch trzecich odcinka, więc po konwersji geometria wygląda nadal jak prosta. Na Bézierze niedostępne są długość i rozpoczynanie równoległości; podział krzywej jest dostępny. LPM wybiera uchwyt przed wierzchołkiem i rozpoczyna jego przeciąganie; wybrany uchwyt ma niebieski obrys. Esc i utrata przechwycenia odtwarzają poprzednią geometrię. Przesuwanie całej figury obejmuje jej uchwyty. Podział krzywej używa de Casteljau, a sesja rozwiązuje G1/C1 przed zatwierdzeniem.
 
 ## Powiadomienie o odrzuconym ruchu
 

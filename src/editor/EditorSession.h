@@ -29,6 +29,8 @@ namespace cad::editor
         bool canSplitSelectedEdge() const;
         bool canDeleteSelectedVertex() const;
         bool splitSelectedEdge();
+        // Deletes on a candidate and solves with the previous surviving vertex pinned.
+        // Failure preserves the document, selection and active gesture.
         bool deleteSelectedVertex();
         std::optional<double> selectedEdgeLength() const;
         std::optional<double> selectedFixedLength() const;

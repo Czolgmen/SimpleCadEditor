@@ -25,6 +25,7 @@ int main()
         TestSuite{"ContinuityJoins", cad::tests::continuityJoinsTests()},
         TestSuite{"Vec2", cad::tests::vec2Tests()},
         TestSuite{"Bezier", cad::tests::bezierTests()},
+        TestSuite{"Arc", cad::tests::arcTests()},
         TestSuite{"Validation", cad::tests::validationTests()},
         TestSuite{"HitTester", cad::tests::hitTesterTests()},
         TestSuite{"CurveHitTester", cad::tests::curveHitTesterTests()},

@@ -104,6 +104,7 @@
     <ClCompile Include="core\ValidationTests.cpp" />
     <ClCompile Include="geometry\Vec2Tests.cpp" />
     <ClCompile Include="geometry\BezierTests.cpp" />
+    <ClCompile Include="geometry\ArcTests.cpp" />
     <ClCompile Include="editor\HitTesterTests.cpp" />
     <ClCompile Include="editor\CurveHitTesterTests.cpp" />
     <ClCompile Include="editor\ControlPointHitTesterTests.cpp" />
