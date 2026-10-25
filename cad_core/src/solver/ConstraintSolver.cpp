@@ -6,6 +6,7 @@
 #include "SolverDetail.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -200,12 +201,17 @@ namespace
         std::span<const constraint::FixedLengthConstraint> lengths,
         std::span<const constraint::ParallelConstraint> parallels,
         std::span<const ContinuityJoin> joins,
-        const SolverPoint& fixedPoint)
+        const SolverPoint& fixedPoint,
+        std::span<const VertexId> fixedVertices)
     {
         std::vector<SolverPoint> variables;
 
         auto addPoint = [&](const SolverPoint& point)
         {
+            if (const auto* vertex = std::get_if<VertexId>(&point);
+                vertex && std::find(fixedVertices.begin(), fixedVertices.end(), *vertex) != fixedVertices.end())
+                return;
+
             if (point != fixedPoint &&
                 std::find(variables.begin(), variables.end(), point) == variables.end())
             {
@@ -800,7 +806,8 @@ namespace cad::solver::detail
         std::span<const constraint::FixedLengthConstraint> lengths,
         std::span<const constraint::ParallelConstraint> parallels,
         const SolverPoint& fixedPoint,
-        const SolveOptions& options)
+        const SolveOptions& options,
+        std::span<const VertexId> fixedVertices)
     {
         if (!std::isfinite(options.lengthTolerance) || options.lengthTolerance <= 0 ||
             !std::isfinite(options.parallelTolerance) || options.parallelTolerance <= 0 ||
@@ -812,6 +819,12 @@ namespace cad::solver::detail
         const auto fixedPosition = getPointPosition(document, fixedPoint);
         if (!fixedPosition)
             return {SolveStatus::InvalidInput, 0};
+        for (const VertexId id : fixedVertices)
+        {
+            const auto* vertex = document.findVertex(id);
+            if (!vertex || !std::isfinite(vertex->position.x) || !std::isfinite(vertex->position.y))
+                return {SolveStatus::InvalidInput, 0};
+        }
         if (const auto failure = validateRelations(document, lengths, parallels))
             return {*failure, 0};
 
@@ -828,7 +841,7 @@ namespace cad::solver::detail
             return {SolveStatus::NoConvergence, 0};
 
         Document candidate = document;
-        const auto variables = collectSolverPoints(candidate, lengths, parallels, *joins, fixedPoint);
+        const auto variables = collectSolverPoints(candidate, lengths, parallels, *joins, fixedPoint, fixedVertices);
         const auto scale = geometryScale(candidate, lengths, parallels, *joins);
         if (!scale)
             return {SolveStatus::InvalidInput, 0};
@@ -846,6 +859,14 @@ namespace cad::solver::detail
                     !candidate.validate().empty() || !finalFixed ||
                     finalFixed->x != fixedPosition->x || finalFixed->y != fixedPosition->y)
                     return {SolveStatus::NoConvergence, iterations};
+
+                for (const VertexId id : fixedVertices)
+                {
+                    const auto* original = document.findVertex(id);
+                    const auto* final = candidate.findVertex(id);
+                    if (!final || final->position.x != original->position.x || final->position.y != original->position.y)
+                        return {SolveStatus::NoConvergence, iterations};
+                }
 
                 document = std::move(candidate);
                 return {SolveStatus::Converged, iterations};
@@ -1003,8 +1024,28 @@ namespace cad::solver
         ControlPointRef fixedControl,
         const SolveOptions& options)
     {
-        return detail::solvePointConstraintSystem(
+        const auto* edge = document.findEdge(fixedControl.edge);
+        if (!edge || !std::holds_alternative<CubicBezier>(edge->geometry))
+            return {SolveStatus::InvalidInput, 0};
+        const std::array endpoints{edge->start, edge->end};
+        // Endpoint positions are a preference. A difficult restricted solve must
+        // leave iterations available for the problem with movable endpoints.
+        SolveOptions preferredOptions = options;
+        preferredOptions.maxIterations = std::min(options.maxIterations, options.maxFixedEndpointIterations);
+        const auto preferred = detail::solvePointConstraintSystem(
             document, lengths, parallels,
-            detail::SolverPoint{fixedControl}, options);
+            detail::SolverPoint{fixedControl}, preferredOptions, endpoints);
+        if (preferred.status == SolveStatus::Converged || preferred.status == SolveStatus::InvalidInput ||
+            preferred.iterations >= options.maxIterations || options.maxIterations == 0)
+            return preferred;
+
+        // A failed preferred attempt leaves document unchanged. Relax only the
+        // endpoint pins, retaining the exact cursor pin and the total iteration limit.
+        SolveOptions remaining = options;
+        remaining.maxIterations -= preferred.iterations;
+        auto result = detail::solvePointConstraintSystem(
+            document, lengths, parallels, detail::SolverPoint{fixedControl}, remaining);
+        result.iterations += preferred.iterations;
+        return result;
     }
 }

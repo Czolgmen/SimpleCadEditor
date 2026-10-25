@@ -6,4 +6,5 @@
   <Project Path="Projecr1_GK.vcxproj" Id="88f0c202-dc68-4616-9a5a-4436d080f333" />
   <Project Path="cad_core/cad_core.vcxproj" Id="29a25e31-693f-48be-b2a3-e95556476d83" />
   <Project Path="tests/cad_core_tests.vcxproj" Id="50a424bd-6cf8-459d-a365-869628b46bb0" />
+  <Project Path="tests/win32_tests.vcxproj" Id="27b94716-a9a1-4e67-bfa4-50e6edda9f01" />
 </Solution>

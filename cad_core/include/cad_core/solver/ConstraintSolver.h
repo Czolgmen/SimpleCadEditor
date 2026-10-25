@@ -22,6 +22,8 @@ namespace cad::solver
         double parallelTolerance = 1e-6; // Absolute normalized cross product (sin of the angle).
         double g1Tolerance = 1e-6;
         double c1Tolerance = 1e-6;
+        // Part of maxIterations, not an additional budget. Zero skips endpoint preference.
+        unsigned maxFixedEndpointIterations = 8;
     };
 
     struct SolveResult{
@@ -51,7 +53,10 @@ namespace cad::solver
         const SolveOptions& options = {}
     );
 
-    // Same solving and transaction rules, with the control point pinned exactly.
+    // The control point is pinned exactly. First tries with both endpoints of its
+    // Bezier fixed, for at most maxFixedEndpointIterations; on failure retries
+    // with movable endpoints and the remaining total iteration budget.
+    // Only a converged attempt commits; failure changes nothing.
     SolveResult solveConstraints(
         Document& document,
         std::span<const constraint::FixedLengthConstraint> lengths,

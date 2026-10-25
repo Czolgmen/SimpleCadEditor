@@ -20,12 +20,17 @@ if (-not $taskInstallation) {
 }
 
 $taskBuildTool = Join-Path $taskInstallation 'MSBuild\Current\Bin\MSBuild.exe'
-$taskProject = Join-Path $PSScriptRoot 'cad_core_tests.vcxproj'
-& $taskBuildTool $taskProject /nologo /m /verbosity:minimal "/p:Configuration=$Configuration" "/p:Platform=$Platform"
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
+foreach ($taskSuite in @('cad_core_tests', 'win32_tests')) {
+    $taskProject = Join-Path $PSScriptRoot "$taskSuite.vcxproj"
+    & $taskBuildTool $taskProject /nologo /m /verbosity:minimal "/p:Configuration=$Configuration" "/p:Platform=$Platform"
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
 
-$taskExecutable = Join-Path $PSScriptRoot "$Platform\$Configuration\cad_core_tests.exe"
-& $taskExecutable
-exit $LASTEXITCODE
+    $taskExecutable = Join-Path $PSScriptRoot "$Platform\$Configuration\$taskSuite.exe"
+    & $taskExecutable
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}
+exit 0

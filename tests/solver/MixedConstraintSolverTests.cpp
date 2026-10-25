@@ -344,7 +344,8 @@ namespace
         const Document before = document;
         const std::array parallels{ParallelConstraint{polygon->edges[0], polygon->edges[1]}};
         const auto result = solveConstraints(document, lengths, parallels, pin);
-        require(result.status == SolveStatus::NoConvergence && result.iterations <= 50, "Conflicting system accepted");
+        require(result.status == SolveStatus::NoConvergence && result.iterations <= SolveOptions{}.maxIterations,
+            "Conflicting system accepted or exceeded the configured iteration budget");
         requireSameDocument(document, before);
     }
 

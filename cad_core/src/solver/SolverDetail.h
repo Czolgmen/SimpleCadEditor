@@ -101,11 +101,13 @@ namespace cad::solver::detail
 
     // Private entry point for the point-based solver. Collects active continuity
     // joins from document and commits only on Converged. The pinned vertex or
-    // control point is preserved exactly. iterations counts accepted corrections.
+    // control point and any additional fixedVertices are preserved exactly.
+    // iterations counts accepted corrections.
     SolveResult solvePointConstraintSystem(
         Document& document,
         std::span<const constraint::FixedLengthConstraint> lengths,
         std::span<const constraint::ParallelConstraint> parallels,
         const SolverPoint& fixedPoint,
-        const SolveOptions& options = {});
+        const SolveOptions& options = {},
+        std::span<const VertexId> fixedVertices = {});
 }

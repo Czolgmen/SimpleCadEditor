@@ -309,6 +309,255 @@ namespace
         }
     }
 
+    void requireVerticesUnchanged(const Document& actual, const Document& before)
+    {
+        for (const auto& [id, polygon] : before.getPolygons())
+        for (const auto vertex : polygon.vertices)
+        {
+            const auto* found = actual.findVertex(vertex);
+            require(found, "Handle solve lost a vertex");
+            requireSameCurvePoint(found->position, before.findVertex(vertex)->position);
+        }
+    }
+
+    void publicG1HandleSolveKeepsVerticesWhenHandlesSuffice()
+    {
+        for (const bool incoming : {false, true})
+        {
+            Fixture f;
+            f.activate(Continuity::G1);
+            const ControlPointRef control{f.polygon.edges[incoming ? 0 : 1],
+                incoming ? BezierControlPoint::Second : BezierControlPoint::First};
+            const Vec2 position = curveHandlePosition(f.document, control);
+            const Document before = f.document;
+            const auto result = solveConstraints(f.document, {}, {}, control);
+            requireSolved(f.document, result, control, position);
+            require(result.iterations > 0, "Unsatisfied G1 did not use a correction");
+            requireVerticesUnchanged(f.document, before);
+        }
+    }
+
+    void publicC1HandleSolveAdjustsOnlyTheOtherHandle()
+    {
+        for (const bool incoming : {false, true})
+        {
+            Fixture f;
+            f.activate(Continuity::C1);
+            const ControlPointRef control{f.polygon.edges[incoming ? 0 : 1],
+                incoming ? BezierControlPoint::Second : BezierControlPoint::First};
+            const ControlPointRef other{f.polygon.edges[incoming ? 1 : 0],
+                incoming ? BezierControlPoint::First : BezierControlPoint::Second};
+            const Vec2 position = curveHandlePosition(f.document, control);
+            Document expected = f.document;
+            const auto result = solveConstraints(f.document, {}, {}, control);
+            requireSolved(f.document, result, control, position);
+            const Vec2 adjusted = curveHandlePosition(f.document, other);
+            const Vec2 analytic = incoming ? Vec2{12, 1} : Vec2{8, -3};
+            require(std::hypot(adjusted.x - analytic.x, adjusted.y - analytic.y) <= 1e-6,
+                "C1 did not match the neighboring handle with vertices fixed");
+            auto& curve = std::get<CubicBezier>(const_cast<Edge*>(expected.findEdge(other.edge))->geometry);
+            (other.point == BezierControlPoint::First ? curve.control1 : curve.control2) = adjusted;
+            requireSameCurveDocument(f.document, expected);
+        }
+    }
+
+    void preferredSolveCanMoveNeighboringLineVertex()
+    {
+        Fixture f(false, true);
+        f.activate(Continuity::G1);
+        const ControlPointRef control{f.polygon.edges[1], BezierControlPoint::First};
+        const Vec2 position = curveHandlePosition(f.document, control);
+        const Vec2 start = f.document.findVertex(f.polygon.vertices[1])->position;
+        const Vec2 end = f.document.findVertex(f.polygon.vertices[2])->position;
+        const auto result = solveConstraints(f.document, {}, {}, control);
+        requireSolved(f.document, result, control, position);
+        requireSameCurvePoint(f.document.findVertex(f.polygon.vertices[1])->position, start);
+        requireSameCurvePoint(f.document.findVertex(f.polygon.vertices[2])->position, end);
+        require(std::abs(f.document.findVertex(f.polygon.vertices[0])->position.y) > 1e-6,
+            "The adjacent line was not allowed to adapt");
+    }
+
+    Fixture handleLengthConflict()
+    {
+        Fixture f(false, true);
+        f.activate(Continuity::C1);
+        require(f.document.moveControlPoint({f.polygon.edges[1], BezierControlPoint::First}, {13, 0}) &&
+            f.document.setFixedLength(f.polygon.edges[0], 10), "Handle/length fixture failed");
+        return f;
+    }
+
+    void publicHandleSolveRelaxesEndpointsWhenRequiredByLength()
+    {
+        Fixture f = handleLengthConflict();
+        const ControlPointRef control{f.polygon.edges[1], BezierControlPoint::First};
+        const auto lengths = f.document.getFixedLengthConstraints();
+        const std::array fixed{f.polygon.vertices[1], f.polygon.vertices[2]};
+        Document restricted = f.document;
+        const Document before = f.document;
+        SolveOptions preferredOptions;
+        preferredOptions.maxIterations = preferredOptions.maxFixedEndpointIterations;
+        const auto preferred = solvePointConstraintSystem(restricted, lengths, {}, control, preferredOptions, fixed);
+        require(preferred.status == SolveStatus::NoConvergence, "Pinned endpoints unexpectedly satisfied conflicting length/C1");
+        requireSameCurveDocument(restricted, before);
+        const auto result = solveConstraints(f.document, f.document.getFixedLengthConstraints(), {}, control);
+        requireSolved(f.document, result, control, {13, 0}, {}, f.document.getFixedLengthConstraints());
+        require(result.iterations >= preferred.iterations, "Fallback did not include preferred-attempt iterations");
+        require(std::abs(f.document.findVertex(f.polygon.vertices[1])->position.x - 10) > 0.1,
+            "Required endpoint movement did not happen");
+    }
+
+    void preferredAndFallbackShareIterationBudgetAndRollback()
+    {
+        for (const unsigned budget : {0u, 1u, 2u})
+        {
+            Fixture f = handleLengthConflict();
+            const Document before = f.document;
+            const ControlPointRef control{f.polygon.edges[1], BezierControlPoint::First};
+            SolveOptions options;
+            options.maxIterations = budget;
+            options.lengthTolerance = options.c1Tolerance = 1e-12;
+            const auto result = solveConstraints(f.document, f.document.getFixedLengthConstraints(), {}, control, options);
+            require(result.status == SolveStatus::NoConvergence && result.iterations <= budget,
+                "Two attempts ignored the shared iteration budget");
+            requireSameCurveDocument(f.document, before);
+        }
+    }
+
+    void difficultLinkedHandleLeavesBudgetForMovableEndpoints()
+    {
+        LinkedCurveTestScene scene;
+        const ControlPointRef control{scene.right.edges[2], BezierControlPoint::First};
+        const Vec2 target = curveHandlePosition(scene.document, control) + Vec2{40, 20};
+        require(scene.document.moveControlPoint(control, target), "Linked control move failed");
+        const Document before = scene.document;
+        const auto* edge = before.findEdge(control.edge);
+        const std::array endpoints{edge->start, edge->end};
+        SolveOptions preferredOptions;
+        preferredOptions.maxIterations = preferredOptions.maxFixedEndpointIterations;
+        Document restricted = before;
+        const auto preferred = solvePointConstraintSystem(restricted, restricted.getFixedLengthConstraints(),
+            restricted.getParallelConstraints(), control, preferredOptions, endpoints);
+        require(preferred.status == SolveStatus::NoConvergence &&
+            preferred.iterations == preferredOptions.maxIterations,
+            "Regression fixture no longer exhausts the restricted solve budget");
+        requireSameCurveDocument(restricted, before);
+
+        const auto result = solveConstraints(scene.document, scene.document.getFixedLengthConstraints(),
+            scene.document.getParallelConstraints(), control);
+        requireSolved(scene.document, result, control, target, {}, scene.document.getFixedLengthConstraints(),
+            scene.document.getParallelConstraints());
+        require(result.iterations > preferred.iterations && result.iterations < SolveOptions{}.maxIterations,
+            "Preferred attempt starved fallback of iterations");
+    }
+
+    void endpointPreferenceBudgetCanBeDisabledOrLimited()
+    {
+        for (const unsigned preferredBudget : {0u, 1u})
+        {
+            Fixture f = handleLengthConflict();
+            const ControlPointRef control{f.polygon.edges[1], BezierControlPoint::First};
+            const Document before = f.document;
+            SolveOptions options;
+            options.maxFixedEndpointIterations = preferredBudget;
+            SolveOptions preferredOptions = options;
+            preferredOptions.maxIterations = preferredBudget;
+            const std::array endpoints{f.polygon.vertices[1], f.polygon.vertices[2]};
+            Document restricted = before;
+            const auto preferred = solvePointConstraintSystem(restricted, restricted.getFixedLengthConstraints(),
+                {}, control, preferredOptions, endpoints);
+            require(preferred.status == SolveStatus::NoConvergence, "Restricted conflict unexpectedly converged");
+            requireSameCurveDocument(restricted, before);
+            Document expected = before;
+            SolveOptions remaining = options;
+            remaining.maxIterations -= preferred.iterations;
+            const auto fallback = solvePointConstraintSystem(expected, expected.getFixedLengthConstraints(),
+                {}, control, remaining);
+            const auto result = solveConstraints(f.document, f.document.getFixedLengthConstraints(), {}, control, options);
+            requireSolved(f.document, result, control, {13, 0}, options, f.document.getFixedLengthConstraints());
+            require(result.iterations == preferred.iterations + fallback.iterations,
+                "Custom preference limit did not retain the remaining total budget");
+            requireSameCurveDocument(f.document, expected);
+        }
+    }
+
+    void preferenceBudgetNeverExceedsTotalBudget()
+    {
+        Fixture f = handleLengthConflict();
+        const Document before = f.document;
+        SolveOptions options;
+        options.maxIterations = 1;
+        options.maxFixedEndpointIterations = 1000;
+        const auto result = solveConstraints(f.document, f.document.getFixedLengthConstraints(), {},
+            ControlPointRef{f.polygon.edges[1], BezierControlPoint::First}, options);
+        require(result.status == SolveStatus::NoConvergence && result.iterations <= 1,
+            "Endpoint preference exceeded the total iteration limit");
+        requireSameCurveDocument(f.document, before);
+    }
+
+    void invalidPublicControlAndAdditionalPinsReject()
+    {
+        Fixture f;
+        f.activate(Continuity::C1);
+        const Document before = f.document;
+        const std::array controls{ControlPointRef{EdgeId{999999}, BezierControlPoint::First},
+            ControlPointRef{f.polygon.edges[2], BezierControlPoint::First},
+            ControlPointRef{f.polygon.edges[0], static_cast<BezierControlPoint>(999)}};
+        for (const auto control : controls)
+        {
+            const auto result = solveConstraints(f.document, {}, {}, control);
+            require(result.status == SolveStatus::InvalidInput && result.iterations == 0, "Invalid control pin accepted");
+            requireSameCurveDocument(f.document, before);
+        }
+        for (const auto id : {VertexId{}, VertexId{999999}})
+        {
+            const std::array fixed{id};
+            const auto result = solvePointConstraintSystem(f.document, {}, {}, f.pins()[1], {}, fixed);
+            require(result.status == SolveStatus::InvalidInput && result.iterations == 0, "Invalid extra vertex pin accepted");
+            requireSameCurveDocument(f.document, before);
+        }
+    }
+
+    void scaledControlSolvesPreserveBothEndpoints()
+    {
+        for (const auto type : {Continuity::G1, Continuity::C1})
+        for (const double size : {1e-90, 1.0, 1e90})
+        {
+            Fixture f(true, true, size, {1000 * size, -300 * size});
+            f.activate(type);
+            const ControlPointRef control{f.polygon.edges[1], BezierControlPoint::First};
+            const Vec2 position = curveHandlePosition(f.document, control);
+            const Document before = f.document;
+            SolveOptions options;
+            options.lengthTolerance *= size;
+            options.c1Tolerance *= size;
+            const auto result = solveConstraints(f.document, {}, {}, control, options);
+            requireSolved(f.document, result, control, position, options);
+            requireVerticesUnchanged(f.document, before);
+        }
+    }
+
+    void endpointPreferencePreservesMixedRelations()
+    {
+        Fixture f;
+        f.activate(Continuity::C1);
+        f.activate(Continuity::G1, 2);
+        require(f.document.moveControlPoint({f.polygon.edges[1], BezierControlPoint::Second}, {13, 10}),
+            "Mixed tangent fixture failed");
+        const std::array positions{Vec2{30, 0}, Vec2{40, 0}, Vec2{40, 10}};
+        const Polygon other = *f.document.findPolygon(f.document.addPolygon(positions));
+        for (const auto edge : {f.polygon.edges[2], f.polygon.edges[3], other.edges[0]})
+            require(f.document.setFixedLength(edge, 10), "Mixed preference length fixture failed");
+        require(f.document.addParallel(f.polygon.edges[2], other.edges[0]), "Mixed preference parallel fixture failed");
+        const Document before = f.document;
+        const ControlPointRef control{f.polygon.edges[1], BezierControlPoint::First};
+        const Vec2 position = curveHandlePosition(f.document, control);
+        const auto result = solveConstraints(f.document, f.document.getFixedLengthConstraints(),
+            f.document.getParallelConstraints(), control);
+        requireSolved(f.document, result, control, position, {}, f.document.getFixedLengthConstraints(),
+            f.document.getParallelConstraints());
+        requireVerticesUnchanged(f.document, before);
+    }
+
     void successKeepsUnrelatedPointsAndMetadata()
     {
         Fixture f;
@@ -348,7 +597,18 @@ namespace cad::tests
             TestCase{"invalid topology and handle data reject", invalidTopologyAndHandleDataReject},
             TestCase{"zero tangents reject G1 and permit satisfied C1", zeroTangentsRejectG1ButPermitSatisfiedC1},
             TestCase{"scaled and translated continuity converges", scaledAndTranslatedContinuityConverges},
-            TestCase{"success keeps unrelated points and metadata", successKeepsUnrelatedPointsAndMetadata}
+            TestCase{"success keeps unrelated points and metadata", successKeepsUnrelatedPointsAndMetadata},
+            TestCase{"public G1 handle solve keeps vertices when handles suffice", publicG1HandleSolveKeepsVerticesWhenHandlesSuffice},
+            TestCase{"public C1 handle solve adjusts only the other handle", publicC1HandleSolveAdjustsOnlyTheOtherHandle},
+            TestCase{"preferred solve can move neighboring line vertex", preferredSolveCanMoveNeighboringLineVertex},
+            TestCase{"public handle solve relaxes endpoints when length requires it", publicHandleSolveRelaxesEndpointsWhenRequiredByLength},
+            TestCase{"preferred and fallback share iteration budget and rollback", preferredAndFallbackShareIterationBudgetAndRollback},
+            TestCase{"invalid public control and additional pins reject", invalidPublicControlAndAdditionalPinsReject},
+            TestCase{"scaled control solves preserve both endpoints", scaledControlSolvesPreserveBothEndpoints},
+            TestCase{"endpoint preference preserves mixed relations", endpointPreferencePreservesMixedRelations},
+            TestCase{"difficult linked handle leaves budget for movable endpoints", difficultLinkedHandleLeavesBudgetForMovableEndpoints},
+            TestCase{"endpoint preference budget can be disabled or limited", endpointPreferenceBudgetCanBeDisabledOrLimited},
+            TestCase{"preference budget never exceeds total budget", preferenceBudgetNeverExceedsTotalBudget}
         };
         return tests;
     }

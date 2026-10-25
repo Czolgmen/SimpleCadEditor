@@ -2,6 +2,7 @@
 
 #include "TestSupport.h"
 #include <cad_core/model/Document.h>
+#include <cad_core/solver/ConstraintSolver.h>
 
 #include <array>
 #include <cmath>
@@ -31,6 +32,37 @@ namespace cad::tests
         ControlPointRef control(BezierControlPoint which = BezierControlPoint::First) const
         {
             return {first.edges[0], which};
+        }
+    };
+
+    // Two curved polygons coupled by lengths and two cross-polygon parallels.
+    // Coordinates approximate the scene reported for slow Debug handle dragging.
+    struct LinkedCurveTestScene
+    {
+        Document document;
+        Polygon left;
+        Polygon right;
+
+        LinkedCurveTestScene()
+        {
+            const std::array a{Vec2{142, 214}, Vec2{373, 381}, Vec2{327, 462}, Vec2{123, 441}};
+            const std::array b{Vec2{540, 211}, Vec2{748, 362}, Vec2{857, 168}};
+            left = *document.findPolygon(document.addPolygon(a));
+            right = *document.findPolygon(document.addPolygon(b));
+            require(document.convertEdgeToBezier(left.edges[2]) && document.convertEdgeToBezier(right.edges[2]),
+                "Linked curve conversion failed");
+            require(document.moveControlPoint({left.edges[2], BezierControlPoint::First}, {309, 489}) &&
+                document.moveControlPoint({left.edges[2], BezierControlPoint::Second}, {116, 516}) &&
+                document.moveControlPoint({right.edges[2], BezierControlPoint::First}, {892, 102}) &&
+                document.moveControlPoint({right.edges[2], BezierControlPoint::Second}, {470, 161}),
+                "Linked curve control setup failed");
+            require(document.setFixedLength(left.edges[1], 93.129) &&
+                document.setFixedLength(right.edges[0], 257.155) &&
+                document.addParallel(left.edges[1], right.edges[1]) &&
+                document.addParallel(left.edges[0], right.edges[0]), "Linked curve relations failed");
+            require(solver::solveConstraints(document, document.getFixedLengthConstraints(),
+                document.getParallelConstraints(), left.vertices[0]).status == solver::SolveStatus::Converged,
+                "Linked curve initial state failed to converge");
         }
     };
 

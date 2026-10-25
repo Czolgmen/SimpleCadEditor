@@ -49,6 +49,94 @@ namespace
         }
     }
 
+    Document adjacentControlDragScene(bool incomingLine)
+    {
+        Document document;
+        const std::array positions{Vec2{0, 0}, Vec2{30, 0}, Vec2{30, 30}, Vec2{0, 30}};
+        const Polygon polygon = *document.findPolygon(document.addPolygon(positions));
+        if (!incomingLine)
+        {
+            require(document.convertEdgeToBezier(polygon.edges[0]) &&
+                document.moveControlPoint({polygon.edges[0], BezierControlPoint::Second}, {30, -10}),
+                "Incoming curve fixture failed");
+        }
+        require(document.convertEdgeToBezier(polygon.edges[1]) &&
+            document.moveControlPoint({polygon.edges[1], BezierControlPoint::First},
+                incomingLine ? Vec2{40, 0} : Vec2{30, 10}), "Outgoing curve fixture failed");
+        for (const auto vertex : polygon.vertices)
+            require(document.setContinuity(vertex, Continuity::G0), "Continuity reset failed");
+        require(document.setContinuity(polygon.vertices[1], Continuity::C1), "C1 fixture failed");
+        if (incomingLine)
+            require(document.setFixedLength(polygon.edges[0], 30) &&
+                document.addParallel(polygon.edges[0], polygon.edges[2]), "Mixed drag fixture failed");
+        return document;
+    }
+
+    void requireDragConstraints(const Document& document)
+    {
+        const auto joins = collectContinuityJoins(document);
+        require(joins && joins->size() == 1, "Wrong controlled joint count");
+        const auto errors = constraint::continuityErrors(document, joins->front());
+        require(errors.has_value(), "Unusable tangents after handle drag");
+        for (const double error : *errors)
+            require(std::isfinite(error) && std::abs(error) <= 1e-6, "Unsatisfied drag continuity");
+        for (const auto& relation : document.getFixedLengthConstraints())
+        {
+            const auto error = constraint::fixedLengthError(document, relation);
+            require(error && std::abs(*error) <= 1e-6, "Unsatisfied drag length");
+        }
+        for (const auto& relation : document.getParallelConstraints())
+        {
+            const auto error = constraint::parallelError(document, relation);
+            require(error && std::abs(*error) <= 1e-6, "Unsatisfied drag parallel relation");
+        }
+    }
+
+    void bezierJointHandleDragKeepsVerticesAndCanCancelOrCommit()
+    {
+        const Document initial = adjacentControlDragScene(false);
+        const Polygon polygon = initial.getPolygons().begin()->second;
+        const ControlPointRef control{polygon.edges[1], BezierControlPoint::First};
+        EditorSession session{initial};
+        for (const bool cancel : {true, false})
+        {
+            require(session.pointerDown({31, 12}, 3) && session.pointerMove({46, 17}), "C1 handle drag failed");
+            requireControlSelection(session, control);
+            requireSameCurvePoint(curveHandlePosition(session.document(), control), {45, 15});
+            for (const auto vertex : polygon.vertices)
+                requireSameCurvePoint(session.document().findVertex(vertex)->position, initial.findVertex(vertex)->position);
+            requireDragConstraints(session.document());
+            if (cancel)
+            {
+                require(session.cancelInteraction(), "Preferred handle drag lost snapshot");
+                requireSameCurveDocument(session.document(), initial);
+            }
+            else
+            {
+                const Document committed = session.document();
+                session.pointerUp();
+                require(!session.cancelInteraction(), "Preferred handle drag retained a committed snapshot");
+                requireSameCurveDocument(session.document(), committed);
+            }
+        }
+    }
+
+    void requiredEndpointMovementKeepsCursorAndCanCancel()
+    {
+        const Document initial = adjacentControlDragScene(true);
+        const Polygon polygon = initial.getPolygons().begin()->second;
+        const ControlPointRef control{polygon.edges[1], BezierControlPoint::First};
+        EditorSession session{initial};
+        require(session.pointerDown({40, 0}, 0) && session.pointerMove({45, 0}), "Fallback handle drag failed");
+        requireControlSelection(session, control);
+        requireSameCurvePoint(curveHandlePosition(session.document(), control), {45, 0});
+        require(std::abs(session.document().findVertex(polygon.vertices[1])->position.x - 30) > 1,
+            "Required endpoint movement did not occur");
+        requireDragConstraints(session.document());
+        require(session.isDragging() && session.cancelInteraction(), "Fallback drag lost its snapshot");
+        requireSameCurveDocument(session.document(), initial);
+    }
+
     void handleSelectionHasPriorityAndClearsOnBackground()
     {
         CurveTestScene scene;
@@ -198,6 +286,45 @@ namespace
         requireSameCurveDocument(session.document(), committed);
     }
 
+    void linkedCurveHandleDragConvergesAndCancels()
+    {
+        LinkedCurveTestScene scene;
+        const std::array controls{
+            ControlPointRef{scene.left.edges[2], BezierControlPoint::First},
+            ControlPointRef{scene.right.edges[2], BezierControlPoint::First},
+            ControlPointRef{scene.right.edges[2], BezierControlPoint::Second}};
+        for (const auto control : controls)
+        {
+            EditorSession session{scene.document};
+            const Vec2 start = curveHandlePosition(scene.document, control);
+            const Vec2 target = start + Vec2{40, 20};
+            require(session.pointerDown(start, 0) && session.pointerMove(target), "Linked curve handle drag failed");
+            requireControlSelection(session, control);
+            requireSameCurvePoint(curveHandlePosition(session.document(), control), target);
+            for (const auto& length : session.document().getFixedLengthConstraints())
+            {
+                const auto error = constraint::fixedLengthError(session.document(), length);
+                require(error && std::abs(*error) <= 1e-6, "Linked drag violated length");
+            }
+            for (const auto& parallel : session.document().getParallelConstraints())
+            {
+                const auto error = constraint::parallelError(session.document(), parallel);
+                require(error && std::abs(*error) <= 1e-6, "Linked drag violated parallelism");
+            }
+            const auto joins = collectContinuityJoins(session.document());
+            require(joins.has_value(), "Linked drag invalidated continuity topology");
+            for (const auto& join : *joins)
+            {
+                const auto errors = constraint::continuityErrors(session.document(), join);
+                require(errors.has_value(), "Linked drag lost tangent");
+                for (const double error : *errors)
+                    require(std::abs(error) <= 1e-6, "Linked drag violated continuity");
+            }
+            require(session.cancelInteraction(), "Linked drag lost its initial snapshot");
+            requireSameCurveDocument(session.document(), scene.document);
+        }
+    }
+
     void unrelatedCommandsPreserveActiveHandleGesture()
     {
         CurveTestScene scene;
@@ -218,6 +345,8 @@ namespace cad::tests
     std::span<const TestCase> controlPointDragTests()
     {
         static const std::array tests{
+            TestCase{"Bezier joint handle drag keeps vertices and cancels or commits", bezierJointHandleDragKeepsVerticesAndCanCancelOrCommit},
+            TestCase{"required endpoint movement keeps cursor and can cancel", requiredEndpointMovementKeepsCursorAndCanCancel},
             TestCase{"G1 handle drag pins cursor and cancels or commits", g1HandleDragPinsCursorAndCanCancelOrCommit},
             TestCase{"exclusive handle selection has priority and clears", handleSelectionHasPriorityAndClearsOnBackground},
             TestCase{"both handles drag with offset and commit", bothHandlesDragWithGrabOffsetAndCommit},
@@ -228,7 +357,8 @@ namespace cad::tests
             TestCase{"polygon drag moves handles by total gesture delta", polygonDragMovesHandlesByTotalGestureDelta},
             TestCase{"polygon cancellation restores every handle", polygonCancellationRestoresEveryHandle},
             TestCase{"later cancellation keeps earlier committed gesture", laterGestureCancellationKeepsEarlierCommit},
-            TestCase{"unrelated commands preserve active handle gesture", unrelatedCommandsPreserveActiveHandleGesture}
+            TestCase{"unrelated commands preserve active handle gesture", unrelatedCommandsPreserveActiveHandleGesture},
+            TestCase{"linked curve handle drag converges and cancels", linkedCurveHandleDragConvergesAndCancels}
         };
         return tests;
     }

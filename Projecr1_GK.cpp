@@ -35,6 +35,8 @@ namespace
 {
     // These IDs are handled directly after TrackPopupMenu, before WM_COMMAND's 16-bit packing.
     constexpr UINT parallelRemovalCommandBase = 0x10000;
+    constexpr UINT_PTR pointerFrameTimer = 1;
+    constexpr UINT pointerFrameIntervalMs = 1;
 
     void drawConsistencyWarning(HDC dc, const RECT& clientRect)
     {
@@ -143,8 +145,28 @@ namespace
         return clientToWorld(POINT{GET_X_LPARAM(position), GET_Y_LPARAM(position)}, clientRect);
     }
 
+    void stopPointerUpdates(HWND window)
+    {
+        KillTimer(window, pointerFrameTimer);
+        if (auto* state = getAppState(window))
+        {
+            state->pendingPointerPosition.reset();
+            state->pointerTimerActive = false;
+        }
+    }
+
+    void updatePointerPreview(HWND window, cad::win32::AppState& state, const cad::Vec2& position)
+    {
+        const bool accepted = state.editor.pointerMove(position);
+        const bool warningChanged = state.showConsistencyWarning != !accepted;
+        state.showConsistencyWarning = !accepted;
+        if (accepted || warningChanged)
+            InvalidateRect(window, nullptr, FALSE);
+    }
+
     void releaseMouseCapture(HWND window)
     {
+        stopPointerUpdates(window);
         if (GetCapture() == window)
             ReleaseCapture();
     }
@@ -260,6 +282,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
     case WM_LBUTTONDOWN:
     {
+        stopPointerUpdates(hWnd);
         auto* state = getAppState(hWnd);
         const auto position = mouseWorldPosition(hWnd, lParam);
         if (!state || !position)
@@ -284,6 +307,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             SetCapture(hWnd);
             if (GetCapture() != hWnd)
                 state->editor.cancelInteraction();
+            else
+                state->pointerTimerActive = SetTimer(hWnd, pointerFrameTimer, pointerFrameIntervalMs, nullptr) != 0;
         }
         else
         {
@@ -300,11 +325,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto position = mouseWorldPosition(hWnd, lParam);
         if (position)
         {
-            const bool accepted = state->editor.pointerMove(*position);
-            const bool warningChanged = state->showConsistencyWarning != !accepted;
-            state->showConsistencyWarning = !accepted;
-            if (accepted || warningChanged)
-                InvalidateRect(hWnd, nullptr, FALSE);
+            // Keep only the latest sample. Solving every mouse message can starve
+            // low-priority WM_PAINT even when each individual solve is fast.
+            if (state->pointerTimerActive)
+                state->pendingPointerPosition = *position;
+            else
+            {
+                // Keep dragging functional if the system cannot allocate a timer.
+                updatePointerPreview(hWnd, *state, *position);
+                UpdateWindow(hWnd);
+            }
+        }
+        return 0;
+    }
+    case WM_TIMER:
+    {
+        if (wParam != pointerFrameTimer)
+            return DefWindowProcW(hWnd, message, wParam, lParam);
+        auto* state = getAppState(hWnd);
+        if (!state || !state->pointerTimerActive)
+            return 0; // KillTimer can leave an already queued WM_TIMER behind.
+        if (!state->editor.isDragging())
+        {
+            stopPointerUpdates(hWnd);
+            return 0;
+        }
+        if (const auto position = state->pendingPointerPosition)
+        {
+            state->pendingPointerPosition.reset();
+            updatePointerPreview(hWnd, *state, *position);
+            // Present this preview before processing the next burst of mouse input.
+            UpdateWindow(hWnd);
         }
         return 0;
     }
@@ -313,10 +364,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         auto* state = getAppState(hWnd);
         if (state)
         {
+            const auto releasedPosition = mouseWorldPosition(hWnd, lParam);
+            const auto finalPosition = releasedPosition ? releasedPosition : state->pendingPointerPosition;
+            stopPointerUpdates(hWnd);
             if (state->editor.isDragging())
             {
-                if (const auto position = mouseWorldPosition(hWnd, lParam))
-                    state->showConsistencyWarning = !state->editor.pointerMove(*position);
+                // Always solve the final cursor sample, even before the first tick.
+                if (finalPosition)
+                    updatePointerPreview(hWnd, *state, *finalPosition);
             }
             // Finish before ReleaseCapture sends WM_CAPTURECHANGED.
             state->editor.pointerUp();
@@ -327,6 +382,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     case WM_CAPTURECHANGED:
     {
+        stopPointerUpdates(hWnd);
         auto* state = getAppState(hWnd);
         if (state && state->editor.cancelInteraction())
         {
@@ -684,10 +740,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             return 0;
         }
     case WM_DESTROY:
+        stopPointerUpdates(hWnd);
         PostQuitMessage(0);
         break;
     case WM_NCDESTROY:
         {
+            stopPointerUpdates(hWnd);
             auto* state = reinterpret_cast<cad::win32::AppState*>(
                 GetWindowLongPtrW(hWnd, GWLP_USERDATA));
             if (state)

@@ -30,6 +30,8 @@ Przykład dołączania nagłówka z kodu aplikacji:
 
 `WndProc` przelicza współrzędne myszy na świat i przekazuje je do `EditorSession::pointerDown`, `pointerMove` i `pointerUp`. Przechwycenie myszy należy do adaptera WinAPI. Puszczenie przycisku przekazuje też ostatnią pozycję kursora, kończy gest i dopiero potem zwalnia przechwycenie.
 
+Podczas gestu `WM_MOUSEMOVE` zapamiętuje najnowszą pozycję w `AppState`, zastępując starszą próbkę. Timer z interwałem 16 ms przekazuje ją do `pointerMove` i wywołuje `UpdateWindow`, aby podgląd został odmalowany przed następną serią komunikatów myszy. Puste takty nie uruchamiają solvera ani odmalowania. Interwał określa częstotliwość zlecania pracy, a nie gwarantowany czas obliczeń lub liczbę klatek. Puszczenie przycisku przelicza końcową pozycję od razu, również przed pierwszym taktem. Anulowanie, utrata przechwycenia i zamknięcie okna usuwają oczekującą próbkę oraz timer; spóźnione `WM_TIMER` są ignorowane. Przy nieudanym `SetTimer` pozostaje natychmiastowa obsługa ruchu. Ograniczenia i transakcje pozostają w przenośnej sesji; rdzeń nie zna zegara Windows.
+
 Esc anuluje ruch do stanu sprzed gestu; poza gestem usuwa zaznaczenie. Nieoczekiwane `WM_CAPTURECHANGED`, `WM_CANCELMODE`, utrata fokusu i minimalizacja również anulują gest. Zwykłe `ReleaseCapture` po zatwierdzeniu nie wycofuje zmian. Rysowanie odczytuje dokument i zaznaczenie z sesji.
 
 ## Podział krawędzi
