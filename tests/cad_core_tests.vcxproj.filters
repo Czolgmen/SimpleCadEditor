@@ -31,10 +31,19 @@
     <ClCompile Include="solver\JacobianTests.cpp">
       <Filter>solver</Filter>
     </ClCompile>
+    <ClCompile Include="solver\ContinuityJacobianTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
+    <ClCompile Include="solver\ContinuitySolverTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
     <ClCompile Include="constraints\FixedLengthConstraintTests.cpp">
       <Filter>constraints</Filter>
     </ClCompile>
     <ClCompile Include="constraints\ParallelConstraintTests.cpp">
+      <Filter>constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="constraints\ContinuityConstraintTests.cpp">
       <Filter>constraints</Filter>
     </ClCompile>
     <ClCompile Include="core\DocumentTests.cpp">
@@ -47,6 +56,15 @@
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\EdgeSamplingTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\EdgeTangentsTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\ContinuityTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\ContinuityJoinsTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\ControlPointMovementTests.cpp">

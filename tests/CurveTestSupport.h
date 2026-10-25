@@ -68,6 +68,7 @@ namespace cad::tests
                 const auto* b = before.findVertex(vertexId);
                 if (!b) { require(!a, "Missing vertex appeared"); continue; }
                 require(a && a->id == b->id, "Vertex ID changed");
+                require(a->continuity == b->continuity, "Continuity value or source changed");
                 requireSameCurvePoint(a->position, id == translated ? b->position + delta : b->position);
             }
             for (const EdgeId edgeId : polygon.edges)

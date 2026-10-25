@@ -1,4 +1,5 @@
 #include <editor/EditorSession.h>
+#include <cad_core/constraints/ContinuityConstraint.h>
 #include "../CurveTestSupport.h"
 
 #include <limits>
@@ -14,6 +15,38 @@ namespace
         const auto& selection = session.selection();
         require(selection.controlPoint == control && !selection.vertex && !selection.edge && !selection.polygon,
             "Control selection is missing or not exclusive");
+    }
+
+    void g1HandleDragPinsCursorAndCanCancelOrCommit()
+    {
+        CurveTestScene scene;
+        require(scene.document.moveControlPoint(scene.control(), {0, -10}) &&
+            scene.document.setContinuity(scene.first.vertices[0], Continuity::G1), "G1 handle fixture failed");
+        EditorSession session{scene.document};
+        const Vec2 target{10, -20};
+        for (const bool cancel : {true, false})
+        {
+            require(session.pointerDown({2, -9}, 3) && session.pointerMove({12, -19}), "G1 handle drag failed");
+            requireControlSelection(session, scene.control());
+            requireSameCurvePoint(curveHandlePosition(session.document(), scene.control()), target);
+            const auto joins = collectContinuityJoins(session.document());
+            require(joins && joins->size() == 1, "Wrong active G1 join count");
+            const auto errors = constraint::continuityErrors(session.document(), joins->front());
+            require(errors && errors->size() == 1 && std::abs(errors->front()) <= 1e-6,
+                "Handle drag accepted unsatisfied G1");
+            if (cancel)
+            {
+                require(session.cancelInteraction(), "G1 drag did not retain a snapshot");
+                requireSameCurveDocument(session.document(), scene.document);
+            }
+            else
+            {
+                const Document committed = session.document();
+                session.pointerUp();
+                require(!session.cancelInteraction(), "Committed G1 drag retained a snapshot");
+                requireSameCurveDocument(session.document(), committed);
+            }
+        }
     }
 
     void handleSelectionHasPriorityAndClearsOnBackground()
@@ -185,6 +218,7 @@ namespace cad::tests
     std::span<const TestCase> controlPointDragTests()
     {
         static const std::array tests{
+            TestCase{"G1 handle drag pins cursor and cancels or commits", g1HandleDragPinsCursorAndCanCancelOrCommit},
             TestCase{"exclusive handle selection has priority and clears", handleSelectionHasPriorityAndClearsOnBackground},
             TestCase{"both handles drag with offset and commit", bothHandlesDragWithGrabOffsetAndCommit},
             TestCase{"successive previews use absolute cursor position", successivePreviewsUseAbsoluteCursorPosition},

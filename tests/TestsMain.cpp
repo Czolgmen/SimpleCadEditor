@@ -20,6 +20,9 @@ int main()
         TestSuite{"DocumentParallel", cad::tests::documentParallelTests()},
         TestSuite{"EdgeConversion", cad::tests::edgeConversionTests()},
         TestSuite{"EdgeSampling", cad::tests::edgeSamplingTests()},
+        TestSuite{"EdgeTangents", cad::tests::edgeTangentsTests()},
+        TestSuite{"Continuity", cad::tests::continuityTests()},
+        TestSuite{"ContinuityJoins", cad::tests::continuityJoinsTests()},
         TestSuite{"Vec2", cad::tests::vec2Tests()},
         TestSuite{"Bezier", cad::tests::bezierTests()},
         TestSuite{"Validation", cad::tests::validationTests()},
@@ -34,10 +37,13 @@ int main()
         TestSuite{"EditorParallel", cad::tests::editorParallelTests()},
         TestSuite{"FixedLengthConstraint", cad::tests::fixedLengthConstraintTests()},
         TestSuite{"ParallelConstraint", cad::tests::parallelConstraintTests()},
+        TestSuite{"ContinuityConstraint", cad::tests::continuityConstraintTests()},
         TestSuite{"DenseLinearAlgebra", cad::tests::denseLinearAlgebraTests()},
         TestSuite{"ConstraintSolver", cad::tests::constraintSolverTests()},
         TestSuite{"MixedConstraintSolver", cad::tests::mixedConstraintSolverTests()},
         TestSuite{"Jacobian", cad::tests::jacobianTests()},
+        TestSuite{"ContinuityJacobian", cad::tests::continuityJacobianTests()},
+        TestSuite{"ContinuitySolver", cad::tests::continuitySolverTests()},
         TestSuite{"LengthInput", cad::tests::lengthInputTests()}
     };
 

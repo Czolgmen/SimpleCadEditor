@@ -1,11 +1,15 @@
 #include <cad_core/solver/ConstraintSolver.h>
 #include <cad_core/model/Document.h>
+#include <cad_core/model/ContinuityJoins.h>
+#include <cad_core/solver/SolverPoint.h>
+#include <cad_core/constraints/ContinuityConstraint.h>
 #include "SolverDetail.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
+#include <variant>
 
 namespace cad::solver::detail
 {
@@ -60,6 +64,87 @@ namespace
         return true;
     }
 
+    bool allSatisfied(
+        std::span<const double> errors,
+        std::span<const ResidualKind> kinds,
+        const SolveOptions& options)
+    {
+        if (errors.size() != kinds.size())
+            return false;
+
+        for(std::size_t i = 0; i < errors.size(); i++)
+        {
+            if(!std::isfinite(errors[i]))
+                return false;
+
+            switch (kinds[i])
+            {
+            case ResidualKind::Length:
+                if(std::abs(errors[i]) > options.lengthTolerance)
+                    return false;
+                break;
+            case ResidualKind::Parallel:
+                if(std::abs(errors[i]) > options.parallelTolerance)
+                    return false;
+                break;
+                
+            case ResidualKind::C1:
+                if(std::abs(errors[i]) > options.c1Tolerance)
+                    return false;
+                break;
+                
+            case ResidualKind::G1:
+                if(std::abs(errors[i]) > options.g1Tolerance)
+                    return false;
+                break;
+                
+            default:
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    std::optional<double> scaledErrorNorm(
+        std::span<const double> errors,
+        std::span<const ResidualKind> kinds,
+        double scale)
+    {
+        if (errors.size() != kinds.size() || !std::isfinite(scale) || scale <= 0)
+            return std::nullopt;
+
+        double norm = 0.0;
+        for (std::size_t i = 0; i < errors.size(); ++i)
+        {
+            double error = errors[i];
+            switch (kinds[i])
+            {
+            case ResidualKind::Length:
+            case ResidualKind::C1:
+                error /= scale;
+                break;
+
+            case ResidualKind::Parallel:
+            case ResidualKind::G1:
+                break;
+
+            default:
+                return std::nullopt;
+            }
+
+            if (!std::isfinite(error))
+                return std::nullopt;
+
+            norm = std::hypot(norm, error);
+        }
+
+        if (!std::isfinite(norm))
+            return std::nullopt;
+
+        return norm;
+    }
+
     double scaledErrorNorm(std::span<const double> errors, std::size_t lengthCount, double scale)
     {
         double norm = 0;
@@ -110,6 +195,67 @@ namespace
         return std::nullopt;
     }
 
+    std::vector<SolverPoint> collectSolverPoints(
+        const Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        std::span<const ContinuityJoin> joins,
+        const SolverPoint& fixedPoint)
+    {
+        std::vector<SolverPoint> variables;
+
+        auto addPoint = [&](const SolverPoint& point)
+        {
+            if (point != fixedPoint &&
+                std::find(variables.begin(), variables.end(), point) == variables.end())
+            {
+                variables.push_back(point);
+            }
+        };
+
+        // References and continuity classes must be validated before collection.
+        auto addEdgeEndpoints = [&](EdgeId id)
+        {
+            const auto* edge = document.findEdge(id);
+            addPoint(edge->start);
+            addPoint(edge->end);
+        };
+
+        for (const auto& relation : lengths)
+            addEdgeEndpoints(relation.edge);
+
+        for (const auto& relation : parallels)
+        {
+            addEdgeEndpoints(relation.first);
+            addEdgeEndpoints(relation.second);
+        }
+
+        for (const auto& join : joins)
+        {
+            if (join.continuity == Continuity::G0)
+                continue;
+
+            const auto* incoming = document.findEdge(join.incoming);
+            const auto* outgoing = document.findEdge(join.outgoing);
+
+            addPoint(join.vertex);
+
+            if (std::holds_alternative<CubicBezier>(incoming->geometry))
+                addPoint(ControlPointRef{join.incoming, BezierControlPoint::Second});
+            else
+                addPoint(incoming->start);
+
+            if (std::holds_alternative<CubicBezier>(outgoing->geometry))
+                addPoint(ControlPointRef{join.outgoing, BezierControlPoint::First});
+            else
+                addPoint(outgoing->end);
+        }
+
+        return variables;
+    }
+
+
+
     std::vector<VertexId> collectVariables(
         const Document& document,
         std::span<const constraint::FixedLengthConstraint> lengths,
@@ -138,6 +284,91 @@ namespace
         }
         return variables;
     }
+
+    std::optional<double> geometryScale(
+        const Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        std::span<const ContinuityJoin> joins)
+    {
+        double scale = 0.0;
+
+        auto includeDistance = [&](const Vec2& a, const Vec2& b)
+        {
+            if (!std::isfinite(a.x) || !std::isfinite(a.y) ||
+                !std::isfinite(b.x) || !std::isfinite(b.y))
+                return false;
+
+            const double distance = std::hypot(b.x - a.x, b.y - a.y);
+            if (!std::isfinite(distance))
+                return false;
+
+            scale = std::max(scale, distance);
+            return true;
+        };
+
+        auto includeEdge = [&](EdgeId id)
+        {
+            const auto* edge = document.findEdge(id);
+            if (!edge)
+                return false;
+
+            const auto* start = document.findVertex(edge->start);
+            const auto* end = document.findVertex(edge->end);
+            return start && end && includeDistance(start->position, end->position);
+        };
+
+        for (const auto& relation : lengths)
+        {
+            if (!std::isfinite(relation.length) || relation.length <= 0 || !includeEdge(relation.edge))
+                return std::nullopt;
+
+            scale = std::max(scale, relation.length);
+        }
+
+        for (const auto& relation : parallels)
+        {
+            if (!includeEdge(relation.first) || !includeEdge(relation.second))
+                return std::nullopt;
+        }
+
+        for (const auto& join : joins)
+        {
+            switch (join.continuity)
+            {
+            case Continuity::G0:
+                continue;
+            case Continuity::G1:
+            case Continuity::C1:
+                break;
+            default:
+                return std::nullopt;
+            }
+
+            const auto* incoming = document.findEdge(join.incoming);
+            const auto* outgoing = document.findEdge(join.outgoing);
+            const auto* vertex = document.findVertex(join.vertex);
+            if (!incoming || !outgoing || !vertex ||
+                incoming->end != join.vertex || outgoing->start != join.vertex ||
+                !includeEdge(join.incoming) || !includeEdge(join.outgoing))
+                return std::nullopt;
+
+            if (const auto* bezier = std::get_if<CubicBezier>(&incoming->geometry))
+            {
+                if (!includeDistance(bezier->control2, vertex->position))
+                    return std::nullopt;
+            }
+
+            if (const auto* bezier = std::get_if<CubicBezier>(&outgoing->geometry))
+            {
+                if (!includeDistance(vertex->position, bezier->control1))
+                    return std::nullopt;
+            }
+        }
+
+        return scale > 0 ? scale : 1.0;
+    }
+
 
     double geometryScale(
         const Document& document,
@@ -194,6 +425,68 @@ namespace
     }
 
     std::optional<std::vector<double>> dampedCorrection(
+        const DenseMatrix& jacobian,
+        std::span<const double> errors,
+        std::span<const ResidualKind> kinds,
+        double scale,
+        double damping)
+    {
+        if (errors.empty() || errors.size() != kinds.size() ||
+            jacobian.size() != errors.size() ||
+            !std::isfinite(scale) || scale <= 0 ||
+            !std::isfinite(damping) || damping <= 0)
+        {
+            return std::nullopt;
+        }
+
+        const std::size_t rows = errors.size();
+        const std::size_t columns = jacobian.front().size();
+
+        if (columns == 0 || !validJacobian(jacobian, rows, columns))
+            return std::nullopt;
+
+        DenseMatrix system(rows, std::vector<double>(rows, 0));
+        std::vector<double> rhs(rows);
+        for (std::size_t i = 0; i < rows; ++i)
+        {
+            switch (kinds[i])
+            {
+            case ResidualKind::Length:
+            case ResidualKind::C1:
+                rhs[i] = -errors[i] / scale;
+                break;
+            
+            case ResidualKind::Parallel:
+            case ResidualKind::G1:
+                rhs[i] = -errors[i];
+                break;
+            
+            default:
+                return std::nullopt;
+            }
+
+            if (!std::isfinite(rhs[i]))
+                return std::nullopt;
+            for (std::size_t j = 0; j < rows; ++j)
+                for (std::size_t k = 0; k < columns; ++k)
+                    system[i][j] += jacobian[i][k] * jacobian[j][k];
+            system[i][i] += damping;
+        }
+        // (J J^T + lambda I)y = -Fscaled; deltaNormalized = J^T y.
+        const auto y = solveLinearSystem(std::move(system), std::move(rhs));
+        if (!y)
+            return std::nullopt;
+        std::vector<double> delta(columns, 0);
+        for (std::size_t column = 0; column < columns; ++column)
+        {
+            for (std::size_t row = 0; row < rows; ++row)
+                delta[column] += jacobian[row][column] * (*y)[row];
+            if (!std::isfinite(delta[column]))
+                return std::nullopt;
+        }
+        return delta;
+    }
+    std::optional<std::vector<double>> dampedCorrection(
         const DenseMatrix& jacobian, std::span<const double> errors,
         std::size_t lengthCount, double scale, double damping)
     {
@@ -223,6 +516,36 @@ namespace
         }
         return delta;
     }
+
+    bool applyCorrection(
+        Document& trial,
+        const Document& candidate,
+        std::span<const SolverPoint> variables,
+        std::span<const double> delta,
+        double scale,
+        double step)
+    {
+        if (delta.size() != 2 * variables.size())
+            return false;
+
+        for (size_t i = 0; i < variables.size(); i++)
+        {
+            const auto original = getPointPosition(candidate, variables[i]);
+            if (!original)
+                return false;
+
+            const Vec2 position{
+                original->x + step * delta[2 * i] * scale,
+                original->y + step * delta[2 * i + 1] * scale
+            };
+
+            if (!setPointPosition(trial, variables[i], position))
+                return false;
+            
+        }
+        return true;
+    }
+
 
     bool applyCorrection(Document& trial, const Document& candidate,
         std::span<const VertexId> variables, std::span<const double> delta, double scale, double step)
@@ -278,6 +601,69 @@ namespace
                             continue;
                         const double trialNorm = scaledErrorNorm(*trialErrors, lengths.size(), scale);
                         if (std::isfinite(trialNorm) && trialNorm < currentNorm)
+                        {
+                            candidate = std::move(trial);
+                            errors = std::move(*trialErrors);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool tryPerpendicularPointStep(
+        Document& candidate,
+        std::vector<double>& errors,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        std::span<const ContinuityJoin> joins,
+        std::span<const ResidualKind> kinds,
+        std::span<const SolverPoint> variables,
+        double scale)
+    {
+        // Only parallel rows have the stationary maximum at perpendicularity.
+        // Continuity rows following them must not trigger this escape step.
+        const auto parallelErrors = std::span<const double>{errors}.subspan(lengths.size(), parallels.size());
+        if (!std::any_of(parallelErrors.begin(), parallelErrors.end(),
+            [](double error) { return std::abs(error) >= 1 - 1e-8; }))
+            return false;
+
+        const auto currentNorm = scaledErrorNorm(errors, kinds, scale);
+        if (!currentNorm)
+            return false;
+
+        for (const auto& point : variables)
+        {
+            const auto original = getPointPosition(candidate, point);
+            if (!original)
+                return false;
+
+            for (const bool changeX : {true, false})
+            {
+                for (const double sign : {-1.0, 1.0})
+                {
+                    double fraction = 1e-4;
+                    for (unsigned attempt = 0; attempt < 8; ++attempt, fraction *= 0.5)
+                    {
+                        Vec2 position = *original;
+                        double& coordinate = changeX ? position.x : position.y;
+                        const double before = coordinate;
+                        coordinate += (sign * fraction) * scale;
+                        if (coordinate == before)
+                            coordinate = std::nextafter(before, sign * std::numeric_limits<double>::infinity());
+                        if (!std::isfinite(coordinate) || coordinate == before)
+                            continue;
+
+                        Document trial = candidate;
+                        if (!setPointPosition(trial, point, position))
+                            continue;
+                        auto trialErrors = evaluateErrors(trial, lengths, parallels, joins);
+                        if (!trialErrors || hasZeroLengthEdge(trial, lengths, parallels))
+                            continue;
+                        const auto trialNorm = scaledErrorNorm(*trialErrors, kinds, scale);
+                        if (trialNorm && *trialNorm < *currentNorm)
                         {
                             candidate = std::move(trial);
                             errors = std::move(*trialErrors);
@@ -394,6 +780,118 @@ namespace
 
 namespace cad::solver::detail
 {
+    SolveResult solvePointConstraintSystem(
+        Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        const SolverPoint& fixedPoint,
+        const SolveOptions& options)
+    {
+        if (!std::isfinite(options.lengthTolerance) || options.lengthTolerance <= 0 ||
+            !std::isfinite(options.parallelTolerance) || options.parallelTolerance <= 0 ||
+            !std::isfinite(options.g1Tolerance) || options.g1Tolerance <= 0 ||
+            !std::isfinite(options.c1Tolerance) || options.c1Tolerance <= 0 ||
+            !document.validate().empty())
+            return {SolveStatus::InvalidInput, 0};
+
+        const auto fixedPosition = getPointPosition(document, fixedPoint);
+        if (!fixedPosition)
+            return {SolveStatus::InvalidInput, 0};
+        if (const auto failure = validateRelations(document, lengths, parallels))
+            return {*failure, 0};
+
+        const auto joins = collectContinuityJoins(document);
+        if (!joins)
+            return {SolveStatus::InvalidInput, 0};
+        const auto kinds = buildResidualKinds(lengths.size(), parallels.size(), *joins);
+        auto errors = evaluateErrors(document, lengths, parallels, *joins);
+        if (!kinds || !errors || kinds->size() != errors->size())
+            return {SolveStatus::InvalidInput, 0};
+        if (allSatisfied(*errors, *kinds, options))
+            return {SolveStatus::Converged, 0};
+        if (options.maxIterations == 0)
+            return {SolveStatus::NoConvergence, 0};
+
+        Document candidate = document;
+        const auto variables = collectSolverPoints(candidate, lengths, parallels, *joins, fixedPoint);
+        const auto scale = geometryScale(candidate, lengths, parallels, *joins);
+        if (!scale)
+            return {SolveStatus::InvalidInput, 0};
+
+        const std::size_t rowCount = kinds->size();
+        double damping = 1e-3;
+        unsigned iterations = 0;
+        while (true)
+        {
+            if (allSatisfied(*errors, *kinds, options))
+            {
+                const auto finalErrors = evaluateErrors(candidate, lengths, parallels, *joins);
+                const auto finalFixed = getPointPosition(candidate, fixedPoint);
+                if (!finalErrors || !allSatisfied(*finalErrors, *kinds, options) ||
+                    !candidate.validate().empty() || !finalFixed ||
+                    finalFixed->x != fixedPosition->x || finalFixed->y != fixedPosition->y)
+                    return {SolveStatus::NoConvergence, iterations};
+
+                document = std::move(candidate);
+                return {SolveStatus::Converged, iterations};
+            }
+            if (iterations >= options.maxIterations)
+                return {SolveStatus::NoConvergence, iterations};
+            if (variables.empty() || hasZeroLengthEdge(candidate, lengths, parallels))
+                return {SolveStatus::DegenerateGeometry, iterations};
+
+            const auto jacobian = computePointJacobian(
+                candidate, lengths, parallels, *joins, variables, *errors, *scale);
+            if (!jacobian || !validJacobian(*jacobian, rowCount, 2 * variables.size()))
+                return {SolveStatus::NoConvergence, iterations};
+            const auto currentNorm = scaledErrorNorm(*errors, *kinds, *scale);
+            if (!currentNorm)
+                return {SolveStatus::NoConvergence, iterations};
+
+            bool accepted = false;
+            for (unsigned attempt = 0; attempt < 10 && !accepted; ++attempt)
+            {
+                if (!std::isfinite(damping))
+                    break;
+                const auto delta = dampedCorrection(*jacobian, *errors, *kinds, *scale, damping);
+                if (delta)
+                {
+                    double step = 1.0;
+                    for (unsigned backtrack = 0; backtrack < 16; ++backtrack, step *= 0.5)
+                    {
+                        Document trial = candidate;
+                        if (!applyCorrection(trial, candidate, variables, *delta, *scale, step))
+                            continue;
+                        auto trialErrors = evaluateErrors(trial, lengths, parallels, *joins);
+                        if (!trialErrors || hasZeroLengthEdge(trial, lengths, parallels))
+                            continue;
+                        const auto trialNorm = scaledErrorNorm(*trialErrors, *kinds, *scale);
+                        if (trialNorm && (*trialNorm < *currentNorm || allSatisfied(*trialErrors, *kinds, options)))
+                        {
+                            candidate = std::move(trial);
+                            errors = std::move(trialErrors);
+                            damping = std::max(1e-12, damping * 0.3);
+                            accepted = true;
+                            break;
+                        }
+                    }
+                }
+                if (!accepted)
+                    damping *= 10;
+            }
+
+            if (!accepted && tryPerpendicularPointStep(
+                candidate, *errors, lengths, parallels, *joins, *kinds, variables, *scale))
+            {
+                damping = 1e-3;
+                accepted = true;
+            }
+            if (!accepted)
+                return {SolveStatus::NoConvergence, iterations};
+            ++iterations;
+        }
+    }
+
     SolveResult solveWithJacobian(Document& document,
         std::span<const constraint::FixedLengthConstraint> constraints,
         VertexId fixedVertex, const SolveOptions& options, JacobianBuilder buildJacobian)
@@ -409,6 +907,57 @@ namespace cad::solver::detail
                 return buildJacobian(candidate, lengths, variables, errors, scale);
             });
     }
+
+    std::optional<std::vector<double>> evaluateErrors(const Document &document, std::span<const constraint::FixedLengthConstraint> lengths, std::span<const constraint::ParallelConstraint> parallels, std::span<const ContinuityJoin> joins)
+    {
+        auto errors = evaluateErrors(document, lengths, parallels);
+        if (!errors)
+            return std::nullopt;
+
+        for (const auto &join : joins)
+        {
+            const auto joinErrors = constraint::continuityErrors(document, join);
+            if (!joinErrors)
+                return std::nullopt;
+
+            errors->insert(
+                errors->end(),
+                joinErrors->begin(),
+                joinErrors->end()
+            );
+        }
+        return errors; 
+    }
+
+    std::optional<std::vector<ResidualKind>> buildResidualKinds(
+        std::size_t lengthCount,
+        std::size_t parallelCount,
+        std::span<const ContinuityJoin> joins)
+    {
+        std::vector<ResidualKind> kinds(lengthCount, ResidualKind::Length);
+        kinds.insert(kinds.end(), parallelCount, ResidualKind::Parallel);
+
+        // Keep the same row order as evaluateErrors(document, lengths, parallels, joins).
+        for (const auto& join : joins)
+        {
+            switch (join.continuity)
+            {
+            case Continuity::G0:
+                break;
+            case Continuity::G1:
+                kinds.push_back(ResidualKind::G1);
+                break;
+            case Continuity::C1:
+                kinds.insert(kinds.end(), 2, ResidualKind::C1);
+                break;
+            default:
+                return std::nullopt;
+            }
+        }
+
+        return kinds;
+    }
+
 }
 
 namespace cad::solver
@@ -425,6 +974,20 @@ namespace cad::solver
         std::span<const constraint::ParallelConstraint> parallels,
         VertexId fixedVertex, const SolveOptions& options)
     {
-        return solveConstraintSystem(document, lengths, parallels, fixedVertex, options, detail::computeConstraintJacobian);
+        return detail::solvePointConstraintSystem(
+            document, lengths, parallels,
+            detail::SolverPoint{fixedVertex}, options);
+    }
+
+    SolveResult solveConstraints(
+        Document& document,
+        std::span<const constraint::FixedLengthConstraint> lengths,
+        std::span<const constraint::ParallelConstraint> parallels,
+        ControlPointRef fixedControl,
+        const SolveOptions& options)
+    {
+        return detail::solvePointConstraintSystem(
+            document, lengths, parallels,
+            detail::SolverPoint{fixedControl}, options);
     }
 }

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <variant>
 
 namespace
 {
@@ -146,6 +147,18 @@ namespace cad::editor
             moved = candidate.moveControlPoint(
                 control->control,
                 worldPosition + control->grabOffset);
+
+            if (moved) 
+            {
+                const auto result = solver::solveConstraints(
+                    candidate,
+                    candidate.getFixedLengthConstraints(),
+                    candidate.getParallelConstraints(),
+                    control->control
+                );
+
+                moved = result.status == solver::SolveStatus::Converged;
+            }
         }
         else if (const auto* polygon =
             std::get_if<DraggingPolygon>(&drag_->state))
@@ -343,12 +356,32 @@ namespace cad::editor
 
     bool EditorSession::convertSelectedEdgeToBezier()
     {
-        if (!selection_.edge ||
-            !document_.convertEdgeToBezier(*selection_.edge))
-        {
+        if(!selection_.edge)
             return false;
-        }
-    
+
+        const auto* edge = document_.findEdge(*selection_.edge);
+
+        if(!edge)
+            return false;
+
+        VertexId fixedVertex = edge->start;
+
+        Document candidate = document_;
+
+        if(!candidate.convertEdgeToBezier(*selection_.edge))
+            return false;
+
+        const auto result = solver::solveConstraints(
+            candidate,
+            candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(),
+            fixedVertex
+        );
+
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
         cancelParallelSelection();
         pointerUp();
         return true;
@@ -356,12 +389,85 @@ namespace cad::editor
 
     bool EditorSession::convertSelectedEdgeToSegment()
     {
-        if (!selection_.edge ||
-            !document_.convertEdgeToSegment(*selection_.edge))
+        if (!selection_.edge)
             return false;
 
+        const auto* edge = document_.findEdge(*selection_.edge);
+        if (!edge)
+            return false;
+        const VertexId fixedVertex = edge->start;
+
+        Document candidate = document_;
+        if (!candidate.convertEdgeToSegment(*selection_.edge))
+            return false;
+
+        const auto result = solver::solveConstraints(
+            candidate,
+            candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(),
+            fixedVertex);
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
         cancelParallelSelection();
         pointerUp();
         return true;
+    }
+
+
+    bool EditorSession::setSelectedVertexContinuity(Continuity continuity)
+    {
+        if (!selectedVertexContinuity())
+            return false;
+
+        const VertexId fixedVertex = *selection_.vertex;
+
+        Document candidate = document_;
+        if (!candidate.setContinuity(fixedVertex, continuity))
+            return false;
+
+        const auto result = solver::solveConstraints(
+            candidate,
+            candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(),
+            fixedVertex);
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
+        cancelParallelSelection();
+        pointerUp();
+        return true;
+    }
+    std::optional<Continuity> EditorSession::selectedVertexContinuity() const
+    {
+        if (!selection_.vertex)
+            return std::nullopt;
+        
+        const Vertex* vertex = document_.findVertex(*selection_.vertex);
+        if (!vertex)
+            return std::nullopt;
+
+        bool hasAdjacentBezier = false;
+        for (const auto& [polygonId, polygon] : document_.getPolygons())
+        {
+            for (const EdgeId id : polygon.edges)
+            {
+                const auto* edge = document_.findEdge(id);
+                if (edge && (edge->start == *selection_.vertex || edge->end == *selection_.vertex) &&
+                    std::holds_alternative<CubicBezier>(edge->geometry))
+                {
+                    hasAdjacentBezier = true;
+                    break;
+                }
+            }
+            if (hasAdjacentBezier)
+                break;
+        }
+        if (!hasAdjacentBezier)
+            return std::nullopt;
+
+        return vertex->continuity.value;
     }
 }

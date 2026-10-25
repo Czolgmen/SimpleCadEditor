@@ -497,6 +497,16 @@ namespace cad {
 
         it_edge->second.geometry = CubicBezier{control1, control2};
 
+        if (it_start->second.continuity.source == ContinuitySource::Default)
+        {
+            it_start->second.continuity.value = Continuity::G1;
+        }
+        
+        if (it_end->second.continuity.source == ContinuitySource::Default)
+        {
+            it_end->second.continuity.value = Continuity::G1;
+        }
+
         return true;
     }
 
@@ -535,5 +545,30 @@ namespace cad {
             default:
                 return false;
         }
+    }
+    bool Document::setContinuity(VertexId id, Continuity continuity)
+    {
+        auto vertex = vertices.find(id);
+
+        if (vertex == vertices.end())
+            return false;
+
+        switch (continuity)
+        {
+        case Continuity::G0:
+        case Continuity::C1:
+        case Continuity::G1:
+            break;
+        
+        default:
+            return false;
+        }
+
+        vertex->second.continuity = ContinuitySetting {
+            continuity,
+            ContinuitySource::Explicit
+        };
+
+        return true;
     }
 }

@@ -1,7 +1,7 @@
 #include <cad_core/model/Document.h>
 
 #include "../../cad_core/src/solver/SolverDetail.h"
-#include "../TestSupport.h"
+#include "../CurveTestSupport.h"
 
 #include <array>
 #include <cmath>
@@ -392,6 +392,90 @@ namespace
         require(document.findVertex(variables[0])->position.x == offset + 6, "Mixed fallback changed source");
     }
 
+    void pointJacobianInterleavesHandlesAndVertexColumns()
+    {
+        Fixture f;
+        const std::array positions{Vec2{30, 0}, Vec2{42, 0}, Vec2{30, 12}};
+        const EdgeId curve = f.document.findPolygon(f.document.addPolygon(positions))->edges[0];
+        require(f.document.convertEdgeToBezier(curve), "Point Jacobian curve fixture failed");
+        const Document before = f.document;
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}, FixedLengthConstraint{f.edges[1], 7}};
+        const std::array parallels{ParallelConstraint{f.edges[0], f.edges[1]}};
+        const std::array<SolverPoint, 5> variables{
+            ControlPointRef{curve, BezierControlPoint::First}, f.vertices[2], f.vertices[0],
+            ControlPointRef{curve, BezierControlPoint::Second}, f.vertices[1]};
+        const auto errors = evaluateErrors(f.document, lengths, parallels);
+        require(errors.has_value(), "Point Jacobian error fixture failed");
+        const auto baseErrors = *errors;
+        const auto matrix = computePointJacobian(f.document, lengths, parallels, variables, *errors, 10);
+        const DenseMatrix expected{
+            {0, 0, 0, 0, -0.6, -0.8, 0, 0, 0.6, 0.8},
+            {0, 0, 0, 1, 0, 0, 0, 0, 0, -1},
+            {0, 0, -0.8, 0, -0.64, 0.48, 0, 0, 1.44, -0.48}};
+        requireMatrixNear(matrix, expected);
+        require(*errors == baseErrors, "Point sampling changed base errors");
+        cad::tests::requireSameCurveDocument(f.document, before);
+    }
+
+    void pointJacobianRejectsInvalidPointReferencesAndPositions()
+    {
+        Fixture f;
+        require(f.document.convertEdgeToBezier(f.edges[1]), "Invalid point fixture failed");
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}};
+        const auto errors = evaluateErrors(f.document, lengths);
+        require(errors.has_value(), "Invalid point error fixture failed");
+        const Document before = f.document;
+        const std::array<SolverPoint, 5> invalid{
+            VertexId{999999}, ControlPointRef{EdgeId{999999}, BezierControlPoint::First},
+            ControlPointRef{f.edges[0], BezierControlPoint::First},
+            ControlPointRef{f.edges[1], static_cast<BezierControlPoint>(999)}, VertexId{}};
+        for (const auto& point : invalid)
+        {
+            const std::array variables{point};
+            require(!computePointJacobian(f.document, lengths, {}, variables, *errors, 10),
+                "Invalid solver point accepted by Jacobian");
+            cad::tests::requireSameCurveDocument(f.document, before);
+        }
+
+        for (const auto which : {BezierControlPoint::First, BezierControlPoint::Second})
+        for (const bool x : {false, true})
+        for (const double value : {std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()})
+        {
+            Document damaged = f.document;
+            auto& curve = std::get<CubicBezier>(const_cast<Edge*>(damaged.findEdge(f.edges[1]))->geometry);
+            auto& position = which == BezierControlPoint::First ? curve.control1 : curve.control2;
+            (x ? position.x : position.y) = value;
+            const Document snapshot = damaged;
+            const std::array<SolverPoint, 1> variables{ControlPointRef{f.edges[1], which}};
+            require(!computePointJacobian(damaged, lengths, {}, variables, *errors, 10),
+                "Non-finite handle accepted by Jacobian");
+            cad::tests::requireSameCurveDocument(damaged, snapshot);
+        }
+    }
+
+    void pointJacobianHandlesRoundedAndOverflowingHandleSteps()
+    {
+        Fixture f;
+        require(f.document.convertEdgeToBezier(f.edges[1]), "Handle step fixture failed");
+        const ControlPointRef control{f.edges[1], BezierControlPoint::First};
+        const std::array<SolverPoint, 1> variables{control};
+        const std::array lengths{FixedLengthConstraint{f.edges[0], 5}};
+        const auto errors = evaluateErrors(f.document, lengths);
+        require(errors.has_value(), "Handle step errors unavailable");
+        require(f.document.moveControlPoint(control, {1e20, -1e20}), "Large handle fixture failed");
+        const Document before = f.document;
+        requireMatrixNear(computePointJacobian(f.document, lengths, {}, variables, *errors, 10), {{0, 0}});
+        cad::tests::requireSameCurveDocument(f.document, before);
+
+        require(f.document.moveControlPoint(control, {std::numeric_limits<double>::max(), 0}),
+            "Maximum handle fixture failed");
+        const Document maximum = f.document;
+        require(!computePointJacobian(f.document, lengths, {}, variables, *errors, 10),
+            "Overflowing handle probe accepted");
+        cad::tests::requireSameCurveDocument(f.document, maximum);
+    }
+
     void emptyDimensionsAreSupported()
     {
         const Fixture f;
@@ -429,7 +513,10 @@ namespace cad::tests
             TestCase{"mixed samples preserve source and raw inputs", mixedSamplesPreserveSourceAndRawInputs},
             TestCase{"invalid mixed Jacobian inputs", mixedJacobianRejectsInvalidInputs},
             TestCase{"collapsed parallel sample rejects without mutation", collapsedParallelSampleRejectsWithoutMutation},
-            TestCase{"mixed Jacobian uses actual normalized displacement", mixedJacobianUsesActualNormalizedDisplacement}
+            TestCase{"mixed Jacobian uses actual normalized displacement", mixedJacobianUsesActualNormalizedDisplacement},
+            TestCase{"point Jacobian interleaves handles and vertex columns", pointJacobianInterleavesHandlesAndVertexColumns},
+            TestCase{"point Jacobian rejects invalid references and positions", pointJacobianRejectsInvalidPointReferencesAndPositions},
+            TestCase{"point Jacobian handles rounded and overflowing handle steps", pointJacobianHandlesRoundedAndOverflowingHandleSteps}
         };
         return tests;
     }

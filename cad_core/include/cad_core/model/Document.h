@@ -70,6 +70,7 @@ namespace cad
             const Vec2& position
         );
         
+        bool setContinuity(VertexId id, Continuity continuity);
 
     };
 

@@ -94,6 +94,36 @@ namespace
         return true; // The parent menu now owns the submenu.
     }
 
+    bool appendContinuityMenu(HMENU menu, const cad::editor::EditorSession& editor)
+    {
+        const auto continuity = editor.selectedVertexContinuity();
+        if (!continuity)
+            return AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Ciągłość wierzchołka") != FALSE;
+
+        UINT checkedCommand;
+        switch (*continuity)
+        {
+        case cad::Continuity::G0: checkedCommand = IDM_CONTINUITY_G0; break;
+        case cad::Continuity::G1: checkedCommand = IDM_CONTINUITY_G1; break;
+        case cad::Continuity::C1: checkedCommand = IDM_CONTINUITY_C1; break;
+        default: return false;
+        }
+
+        HMENU submenu = CreatePopupMenu();
+        if (!submenu)
+            return false;
+        if (!AppendMenuW(submenu, MF_STRING, IDM_CONTINUITY_G0, L"G0 - wspólny punkt") ||
+            !AppendMenuW(submenu, MF_STRING, IDM_CONTINUITY_G1, L"G1 - zgodny kierunek stycznych") ||
+            !AppendMenuW(submenu, MF_STRING, IDM_CONTINUITY_C1, L"C1 - zgodne pochodne") ||
+            !CheckMenuRadioItem(submenu, IDM_CONTINUITY_G0, IDM_CONTINUITY_C1, checkedCommand, MF_BYCOMMAND) ||
+            !AppendMenuW(menu, MF_STRING | MF_POPUP, reinterpret_cast<UINT_PTR>(submenu), L"Ciągłość wierzchołka"))
+        {
+            DestroyMenu(submenu);
+            return false;
+        }
+        return true; // The parent menu owns the submenu after a successful append.
+    }
+
     cad::win32::AppState* getAppState(HWND window)
     {
         return reinterpret_cast<cad::win32::AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
@@ -393,6 +423,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         std::vector<cad::EdgeId> parallelRemovalTargets;
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
+            !appendContinuityMenu(menu, state->editor) ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
             !AppendMenuW(menu, lengthFlags, IDM_SET_FIXED_LENGTH,
                 state->editor.selectedFixedLength() ? L"Zmień stałą długość..." : L"Ustaw stałą długość...") ||
@@ -437,6 +468,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Analizuj zaznaczenia menu:
             switch (wmId)
             {
+            case IDM_CONTINUITY_G0:
+            case IDM_CONTINUITY_G1:
+            case IDM_CONTINUITY_C1:
+            {
+                auto* state = getAppState(hWnd);
+                if (!state || !state->editor.selectedVertexContinuity())
+                    return 0;
+
+                const cad::Continuity continuity = wmId == IDM_CONTINUITY_G0 ? cad::Continuity::G0
+                    : wmId == IDM_CONTINUITY_G1 ? cad::Continuity::G1 : cad::Continuity::C1;
+                if (!state->editor.setSelectedVertexContinuity(continuity))
+                {
+                    MessageBoxW(hWnd,
+                        L"Nie udało się uzyskać spójnego stanu dla wybranej ciągłości. "
+                        L"Dokument i poprzednie ustawienie nie zostały zmienione.",
+                        L"Ciągłość wierzchołka", MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+                releaseMouseCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             case IDM_CONVERT_TO_BEZIER:
             case IDM_CONVERT_TO_SEGMENT:
             {

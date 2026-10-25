@@ -1,4 +1,5 @@
 #include <editor/EditorSession.h>
+#include <cad_core/constraints/ContinuityConstraint.h>
 
 #include "../TestSupport.h"
 
@@ -86,6 +87,15 @@ namespace
             const auto error = constraint::parallelError(document, relation);
             require(error && std::abs(*error) <= 1e-6, "Session accepted an unsatisfied parallel relation");
         }
+        const auto joins = collectContinuityJoins(document);
+        require(joins.has_value(), "Session left invalid continuity joins");
+        for (const auto& join : *joins)
+        {
+            const auto errors = constraint::continuityErrors(document, join);
+            require(errors.has_value(), "Session accepted unusable tangents");
+            for (const double error : *errors)
+                require(std::isfinite(error) && std::abs(error) <= 1e-6, "Session accepted unsatisfied continuity");
+        }
     }
 
     Document parallelScene(bool withLengths)
@@ -121,6 +131,9 @@ namespace
             for (const VertexId vertexId : polygon.vertices)
             {
                 const Vec2 original = expected.findVertex(vertexId)->position;
+                require(actual.findVertex(vertexId) &&
+                    actual.findVertex(vertexId)->continuity == expected.findVertex(vertexId)->continuity,
+                    "Session changed continuity value or source unexpectedly");
                 requirePosition(actual, vertexId, id == translated ? original + delta : original);
             }
             for (const EdgeId edgeId : polygon.edges)
@@ -699,6 +712,29 @@ namespace
         requireDocument(session.document(), before);
     }
 
+    void requireSolvedConversion(const Document& actual, Document expected, PolygonId changed, VertexId pinned)
+    {
+        const Vec2 fixedPosition = expected.findVertex(pinned)->position;
+        // Allow the solver to adapt this polygon, while checking exact metadata,
+        // topology, relation cleanup and all geometry of other polygons.
+        const auto* polygon = expected.findPolygon(changed);
+        for (const auto id : polygon->vertices)
+        {
+            require(actual.findVertex(id), "Conversion lost a vertex");
+            const_cast<Vertex*>(expected.findVertex(id))->position = actual.findVertex(id)->position;
+        }
+        for (const auto id : polygon->edges)
+        {
+            const auto* edge = actual.findEdge(id);
+            require(edge && edge->geometry.index() == expected.findEdge(id)->geometry.index(),
+                "Conversion changed an unexpected geometry type");
+            const_cast<Edge*>(expected.findEdge(id))->geometry = edge->geometry;
+        }
+        requireDocument(actual, expected);
+        requirePosition(actual, pinned, fixedPosition);
+        requireAllRelationsSatisfied(actual);
+    }
+
     void selectedBezierConversionCleansRelatedConstraints()
     {
         const Document initial = parallelScene(true);
@@ -708,7 +744,8 @@ namespace
         Document expected = initial;
         require(expected.convertEdgeToBezier(edge), "Expected conversion failed");
         require(session.convertSelectedEdgeToBezier(), "Selected edge conversion failed");
-        requireDocument(session.document(), expected);
+        const auto& polygon = initial.getPolygons().begin()->second;
+        requireSolvedConversion(session.document(), expected, polygon.id, initial.findEdge(edge)->start);
         require(session.selection().edge == edge && !session.selection().vertex && !session.selection().polygon,
             "Conversion lost exclusive edge selection");
         require(!session.selectedFixedLength(), "Conversion retained a length relation");
@@ -780,7 +817,14 @@ namespace
         f.session.selectAt({10, 0}, 0);
         require(f.session.convertSelectedEdgeToBezier(), "Initial conversion failed");
         auto* edge = const_cast<Edge*>(f.session.document().findEdge(f.edge));
-        edge->geometry = CubicBezier{{-8, 13}, {29, -4}};
+        const auto* polygon = f.session.document().findPolygon(f.polygon);
+        const Vec2 start = f.session.document().findVertex(edge->start)->position;
+        const Vec2 end = f.session.document().findVertex(edge->end)->position;
+        const Vec2 previous = f.session.document().findVertex(polygon->vertices[3])->position;
+        const Vec2 next = f.session.document().findVertex(polygon->vertices[2])->position;
+        // Change handle lengths while retaining valid G1 at both endpoints.
+        edge->geometry = CubicBezier{start + (start - previous) * 0.5, end - (next - end) * 0.75};
+        requireAllRelationsSatisfied(f.session.document());
         const Document before = f.session.document();
         require(f.session.convertSelectedEdgeToBezier() && f.session.convertSelectedEdgeToBezier(), "Repeated conversion failed");
         requireDocument(f.session.document(), before);
@@ -800,12 +844,210 @@ namespace
             "Bezier enabled the segment-only split operation");
         require(!f.session.pendingParallelEdge(), "Rejected parallel command started an interaction");
         requireDocument(f.session.document(), curve);
-        require(f.session.convertSelectedEdgeToSegment() && f.session.selectedEdgeLength() == 20,
+        const auto* edge = curve.findEdge(f.edge);
+        const Vec2 start = curve.findVertex(edge->start)->position;
+        const Vec2 end = curve.findVertex(edge->end)->position;
+        const double expectedLength = std::hypot(end.x - start.x, end.y - start.y);
+        require(f.session.convertSelectedEdgeToSegment() && f.session.selectedEdgeLength().has_value(),
             "Restored segment did not regain its length default");
+        require(std::abs(*f.session.selectedEdgeLength() - expectedLength) <= 1e-10,
+            "Restored segment reports a length different from its current endpoints");
         require(f.session.canSplitSelectedEdge(), "Restored segment did not regain splitting");
         require(f.session.beginParallelSelection(), "Restored segment could not start parallel selection");
         f.session.cancelParallelSelection();
         require(f.session.setSelectedEdgeLength(20), "Restored segment could not receive a length");
+    }
+
+    Document adjacentCurvesForConversion(bool coincidentEndpoints = false)
+    {
+        Document document = scene();
+        const auto& polygon = document.getPolygons().begin()->second;
+        const double x = coincidentEndpoints ? 0.0 : 20.0;
+        if (coincidentEndpoints)
+            require(document.moveVertex(polygon.vertices[1], {0, 0}), "Coincident endpoint fixture failed");
+        const_cast<Edge*>(document.findEdge(polygon.edges[0]))->geometry = CubicBezier{{5, 10}, {x, -5}};
+        const_cast<Edge*>(document.findEdge(polygon.edges[1]))->geometry = CubicBezier{{x, 5}, {25, 15}};
+        require(document.setContinuity(polygon.vertices[1],
+            coincidentEndpoints ? Continuity::G1 : Continuity::C1), "Conversion continuity fixture failed");
+        requireAllRelationsSatisfied(document);
+        return document;
+    }
+
+    void segmentConversionRepairsAdjacentCurveContinuity()
+    {
+        const Document initial = adjacentCurvesForConversion();
+        const auto& polygon = initial.getPolygons().begin()->second;
+        EditorSession session{initial};
+        require(session.selectAt({11.875, 1.875}, 0.2) && session.selection().edge == polygon.edges[0],
+            "Adjacent curve selection failed");
+        Document expected = initial;
+        require(expected.convertEdgeToSegment(polygon.edges[0]), "Expected conversion failed");
+        require(session.convertSelectedEdgeToSegment(), "Curve-to-segment solve failed");
+        requireSolvedConversion(session.document(), expected, polygon.id, polygon.vertices[0]);
+        require(session.selection().edge == polygon.edges[0] && !session.isDragging() &&
+            !session.pendingParallelEdge(), "Successful segment conversion lost selection or left an interaction");
+        const Document committed = session.document();
+        require(session.convertSelectedEdgeToSegment(), "Repeated segment conversion failed");
+        requireDocument(session.document(), committed);
+    }
+
+    void rejectedSegmentConversionKeepsCurveAndSelection()
+    {
+        const Document initial = adjacentCurvesForConversion(true);
+        const auto& polygon = initial.getPolygons().begin()->second;
+        EditorSession session{initial};
+        require(session.selectAt({1.875, 1.875}, 0.2) && session.selection().edge == polygon.edges[0],
+            "Loop curve selection failed");
+        require(!session.convertSelectedEdgeToSegment(), "Zero G1 segment accepted");
+        requireDocument(session.document(), initial);
+        require(session.selection().edge == polygon.edges[0] && !session.isDragging(),
+            "Rejected conversion changed selection or drag state");
+    }
+
+    void failedSegmentSolvePreservesPendingSelection()
+    {
+        Document document;
+        const std::array positions{Vec2{0, 0}, Vec2{20, 0}, Vec2{0, 20}};
+        const Polygon polygon = *document.findPolygon(document.addPolygon(positions));
+        require(document.setFixedLength(polygon.edges[0], 1) &&
+            document.setFixedLength(polygon.edges[1], 1) && document.setFixedLength(polygon.edges[2], 10),
+            "Conflicting segment fixture failed");
+        EditorSession session{document};
+        require(session.selectAt({10, 0}, 0) && session.selection().edge == polygon.edges[0] &&
+            session.beginParallelSelection(), "Pending segment fixture failed");
+        require(!session.convertSelectedEdgeToSegment(), "Conflicting segment solve accepted");
+        requireDocument(session.document(), document);
+        require(session.selection().edge == polygon.edges[0] && session.pendingParallelEdge() == polygon.edges[0],
+            "Failed segment solve lost pending selection");
+    }
+
+    void continuityChoicesSolveWithSelectedVertexPinned()
+    {
+        for (const auto type : {Continuity::G0, Continuity::G1, Continuity::C1})
+        for (const std::size_t index : {0u, 1u, 2u})
+        {
+            const Document initial = adjacentCurvesForConversion();
+            const auto& polygon = initial.getPolygons().begin()->second;
+            const VertexId vertex = polygon.vertices[index];
+            const Vec2 position = initial.findVertex(vertex)->position;
+            EditorSession session{initial};
+            require(session.selectAt(position, 0) && session.selection().vertex == vertex,
+                "Continuity vertex selection failed");
+            require(session.setSelectedVertexContinuity(type), "Valid continuity choice rejected");
+            const auto setting = session.document().findVertex(vertex)->continuity;
+            require(setting.value == type && setting.source == ContinuitySource::Explicit,
+                "Continuity choice was not stored as explicit");
+            requirePosition(session.document(), vertex, position);
+            requireAllRelationsSatisfied(session.document());
+            require(session.selection().vertex == vertex && !session.selection().edge &&
+                !session.selection().controlPoint && !session.selection().polygon && !session.isDragging(),
+                "Continuity choice lost exclusive vertex selection or left a drag active");
+        }
+    }
+
+    void sameDefaultContinuityBecomesExplicitWithoutMovement()
+    {
+        Fixture f;
+        require(f.session.selectAt({10, 0}, 0) && f.session.convertSelectedEdgeToBezier(),
+            "Default continuity fixture failed");
+        require(f.session.document().findVertex(f.vertex)->continuity ==
+            ContinuitySetting{Continuity::G1, ContinuitySource::Default}, "Fixture is not default G1");
+        require(f.session.selectAt({0, 0}, 0) && f.session.selection().vertex == f.vertex,
+            "Default G1 vertex selection failed");
+        Document expected = f.session.document();
+        require(expected.setContinuity(f.vertex, Continuity::G1), "Expected explicit choice failed");
+        require(f.session.setSelectedVertexContinuity(Continuity::G1), "Same-value explicit choice rejected");
+        requireDocument(f.session.document(), expected);
+    }
+
+    void choosingG0ReleasesContinuityWithoutMovingGeometry()
+    {
+        const Document initial = adjacentCurvesForConversion();
+        const VertexId vertex = initial.getPolygons().begin()->second.vertices[1];
+        EditorSession session{initial};
+        require(session.selectAt({20, 0}, 0) && session.selection().vertex == vertex, "G0 selection failed");
+        Document expected = initial;
+        require(expected.setContinuity(vertex, Continuity::G0), "Expected G0 fixture failed");
+        require(session.setSelectedVertexContinuity(Continuity::G0), "G0 choice rejected");
+        requireDocument(session.document(), expected);
+        requireAllRelationsSatisfied(session.document());
+    }
+
+    void continuityRequiresVertexWithAdjacentBezier()
+    {
+        EditorSession empty;
+        require(!empty.setSelectedVertexContinuity(Continuity::G1), "Empty session accepted continuity");
+        Fixture f;
+        const Document before = f.session.document();
+        require(!f.session.setSelectedVertexContinuity(Continuity::G0), "Missing selection accepted continuity");
+        require(f.session.pointerDown({0, 0}, 0), "Line-only continuity gesture failed");
+        for (const auto type : {Continuity::G0, Continuity::G1, Continuity::C1})
+            require(!f.session.setSelectedVertexContinuity(type) && f.session.isDragging(),
+                "Line-only vertex accepted continuity or lost its drag");
+        require(f.session.cancelInteraction(), "Rejected line-only choice lost snapshot");
+        requireDocument(f.session.document(), before);
+
+        require(f.session.selectAt({10, 0}, 0) && f.session.beginParallelSelection(), "Wrong-selection fixture failed");
+        require(!f.session.setSelectedVertexContinuity(Continuity::G1) && f.session.pendingParallelEdge() == f.edge &&
+            f.session.selection().edge == f.edge, "Wrong selection changed pending parallel source");
+        require(f.session.selectAt({10, 10}, 0) && f.session.selection().polygon == f.polygon &&
+            !f.session.setSelectedVertexContinuity(Continuity::G1), "Polygon selection accepted continuity");
+        requireDocument(f.session.document(), before);
+
+        const Document curves = adjacentCurvesForConversion();
+        EditorSession controls{curves};
+        require(controls.selectAt({5, 10}, 0) && controls.selection().controlPoint &&
+            !controls.setSelectedVertexContinuity(Continuity::C1), "Handle selection accepted vertex continuity");
+        requireDocument(controls.document(), curves);
+    }
+
+    void invalidContinuityClassKeepsDocumentAndGesture()
+    {
+        const Document initial = adjacentCurvesForConversion();
+        EditorSession session{initial};
+        require(session.pointerDown({0, 0}, 0), "Invalid class drag fixture failed");
+        const auto selected = session.selection().vertex;
+        for (const auto type : {static_cast<Continuity>(-1), static_cast<Continuity>(3), static_cast<Continuity>(999)})
+        {
+            require(!session.setSelectedVertexContinuity(type), "Invalid continuity class accepted");
+            require(session.isDragging() && session.selection().vertex == selected, "Invalid class destroyed gesture");
+            requireDocument(session.document(), initial);
+        }
+        require(session.cancelInteraction(), "Invalid choice lost drag snapshot");
+        requireDocument(session.document(), initial);
+    }
+
+    void rejectedContinuitySolveKeepsPreviewAndCancellation()
+    {
+        const Document initial = adjacentCurvesForConversion();
+        EditorSession session{initial};
+        const VertexId vertex = initial.getPolygons().begin()->second.vertices[0];
+        // Move the selected G0 vertex onto its outgoing handle. G1 then has a zero tangent.
+        require(session.pointerDown({0, 0}, 0) && session.pointerMove({5, 10}), "Zero tangent preview failed");
+        const Document preview = session.document();
+        require(!session.setSelectedVertexContinuity(Continuity::G1), "Zero-tangent G1 choice accepted");
+        requireDocument(session.document(), preview);
+        require(session.isDragging() && session.selection().vertex == vertex, "Rejected solve lost active gesture");
+        require(session.cancelInteraction(), "Rejected continuity solve lost initial snapshot");
+        requireDocument(session.document(), initial);
+    }
+
+    void successfulContinuityChoiceCommitsActiveGesture()
+    {
+        const Document initial = adjacentCurvesForConversion();
+        EditorSession session{initial};
+        const VertexId vertex = initial.getPolygons().begin()->second.vertices[0];
+        require(session.pointerDown({0, 0}, 0) && session.pointerMove({3, 4}), "Continuity commit preview failed");
+        require(session.setSelectedVertexContinuity(Continuity::C1), "Continuity commit failed");
+        requirePosition(session.document(), vertex, {3, 4});
+        requireAllRelationsSatisfied(session.document());
+        require(session.document().findVertex(vertex)->continuity ==
+            ContinuitySetting{Continuity::C1, ContinuitySource::Explicit}, "Committed choice lost explicit setting");
+        require(!session.isDragging() && !session.pendingParallelEdge() && session.selection().vertex == vertex,
+            "Successful choice left an interaction or lost selection");
+        const Document committed = session.document();
+        require(!session.cancelInteraction(), "Successful choice retained a cancellable snapshot");
+        requireDocument(session.document(), committed);
     }
 
     void segmentConversionNoOpPreservesRelations()
@@ -845,6 +1087,16 @@ namespace cad::tests
             TestCase{"repeated conversion preserves edited handles", repeatedConversionPreservesEditedHandles},
             TestCase{"curve disables length and parallelism until restored", curveDisablesLengthAndParallelUntilRestored},
             TestCase{"segment no-op preserves relations", segmentConversionNoOpPreservesRelations},
+            TestCase{"segment conversion repairs adjacent curve continuity", segmentConversionRepairsAdjacentCurveContinuity},
+            TestCase{"rejected segment conversion keeps curve and selection", rejectedSegmentConversionKeepsCurveAndSelection},
+            TestCase{"failed segment solve preserves pending selection", failedSegmentSolvePreservesPendingSelection},
+            TestCase{"continuity choices solve with selected vertex pinned", continuityChoicesSolveWithSelectedVertexPinned},
+            TestCase{"same default continuity becomes explicit without movement", sameDefaultContinuityBecomesExplicitWithoutMovement},
+            TestCase{"G0 releases continuity without moving geometry", choosingG0ReleasesContinuityWithoutMovingGeometry},
+            TestCase{"continuity requires a vertex with adjacent Bezier", continuityRequiresVertexWithAdjacentBezier},
+            TestCase{"invalid continuity class keeps document and gesture", invalidContinuityClassKeepsDocumentAndGesture},
+            TestCase{"rejected continuity solve keeps preview and cancellation", rejectedContinuitySolveKeepsPreviewAndCancellation},
+            TestCase{"successful continuity choice commits active gesture", successfulContinuityChoiceCommitsActiveGesture},
             TestCase{"parallel-only drag pins cursor and adapts related edges", parallelOnlyDragPinsCursorAndAdaptsRelatedEdges},
             TestCase{"mixed drag preserves grab offset across previews", mixedDragPreservesOffsetAndAllRelationsAcrossPreviews},
             TestCase{"rejected mixed drag preserves preview and resumes or commits", rejectedMixedDragPreservesPreviewAndCanResumeOrCommit},

@@ -72,6 +72,18 @@ Jeśli sesja odrzuci położenie podczas przeciągania, adapter pokazuje na dole
 
 Stan powiadomienia należy do `AppState`; rdzeń i przenośna sesja nie znają komunikatu ani GDI. Pasek jest rysowany po geometrii do tego samego bufora, z przywróceniem ustawień DC. Nieudane dodanie równoległości lub ustawienie długości nadal używa pojedynczego dialogu z informacją o zachowaniu dokumentu.
 
+## Ciągłość wierzchołka
+
+PPM na wierzchołku przy przynajmniej jednym Bézierze udostępnia podmenu „Ciągłość wierzchołka”. Shift+F10 otwiera je dla bieżącego zaznaczenia. Opcje mają wzajemnie wykluczające się oznaczenie radiowe:
+
+- G0 — wspólny punkt, bez warunku styczności.
+- G1 — zgodny kierunek stycznych.
+- C1 — zgodne pochodne, wraz z ich długościami.
+
+Adapter pobiera dostępność i aktualną klasę przez `EditorSession::selectedVertexContinuity()`. Dla uchwytu, krawędzi, wnętrza figury, pustego zaznaczenia i wierzchołka pomiędzy dwoma odcinkami podmenu jest nieaktywne. Odczyt menu nie zmienia ustawienia; dopiero wybór polecenia zapisuje jawną decyzję użytkownika.
+
+Polecenia `IDM_CONTINUITY_G0`, `IDM_CONTINUITY_G1` i `IDM_CONTINUITY_C1` wywołują `setSelectedVertexContinuity()`. Sesja przypina zaznaczony wierzchołek i rozwiązuje wszystkie ograniczenia na kopii dokumentu. Po sukcesie adapter zwalnia przechwycenie myszy i zleca przerysowanie. Nieudana zmiana pokazuje jeden komunikat o nieuzyskaniu spójnego stanu; dokument i poprzednia klasa pozostają zachowane. Menu oraz jego podmenu są zwalniane przez `DestroyMenu()`.
+
 ## Przebieg odmalowania
 
 Punkt wejścia i procedura okna są w `Projecr1_GK.cpp`. `WM_PAINT`, pomiędzy `BeginPaint` i `EndPaint`:

@@ -47,6 +47,12 @@ namespace cad::editor
         bool convertSelectedEdgeToBezier();
         bool convertSelectedEdgeToSegment();
 
+        // Requires an incident Bezier; stores an explicit choice and solves with the vertex pinned.
+        // Failure preserves document and interaction; success commits and ends the gesture.
+        bool setSelectedVertexContinuity(Continuity continuity);
+
+        std::optional<Continuity> selectedVertexContinuity() const;
+
     private:
         struct DragTransaction
         {

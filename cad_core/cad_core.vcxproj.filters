@@ -45,6 +45,9 @@
     <ClInclude Include="include\cad_core\constraints\ParallelConstraint.h">
       <Filter>include\constraints</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\constraints\ContinuityConstraint.h">
+      <Filter>include\constraints</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\demo\DemoScene.hpp">
       <Filter>include\demo</Filter>
     </ClInclude>
@@ -63,6 +66,12 @@
     <ClInclude Include="include\cad_core\model\Vertex.h">
       <Filter>include\model</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\model\Continuity.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="include\cad_core\model\ContinuityJoins.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\model\Edge.h">
       <Filter>include\model</Filter>
     </ClInclude>
@@ -70,6 +79,9 @@
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="include\cad_core\model\EdgeSampling.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="include\cad_core\model\EdgeTangents.h">
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="include\cad_core\model\Polygon.h">
@@ -84,6 +96,9 @@
     <ClInclude Include="include\cad_core\solver\ConstraintSolver.h">
       <Filter>include\solver</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\solver\SolverPoint.h">
+      <Filter>include\solver</Filter>
+    </ClInclude>
     <ClInclude Include="src\solver\DenseLinearAlgebra.h">
       <Filter>src\solver</Filter>
     </ClInclude>
@@ -96,6 +111,9 @@
       <Filter>src\constraints</Filter>
     </ClCompile>
     <ClCompile Include="src\constraints\ParallelConstraint.cpp">
+      <Filter>src\constraints</Filter>
+    </ClCompile>
+    <ClCompile Include="src\constraints\ContinuityConstraint.cpp">
       <Filter>src\constraints</Filter>
     </ClCompile>
     <ClCompile Include="src\demo\DemoScene.cpp">
@@ -113,6 +131,12 @@
     <ClCompile Include="src\model\EdgeSampling.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="src\model\EdgeTangents.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="src\model\ContinuityJoins.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
     <ClCompile Include="src\solver\ConstraintSolver.cpp">
       <Filter>src\solver</Filter>
     </ClCompile>
@@ -120,6 +144,9 @@
       <Filter>src\solver</Filter>
     </ClCompile>
     <ClCompile Include="src\solver\Jacobian.cpp">
+      <Filter>src\solver</Filter>
+    </ClCompile>
+    <ClCompile Include="src\solver\SolverPoint.cpp">
       <Filter>src\solver</Filter>
     </ClCompile>
   </ItemGroup>
