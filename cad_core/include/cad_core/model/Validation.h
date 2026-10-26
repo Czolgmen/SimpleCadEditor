@@ -10,7 +10,9 @@ namespace cad {
         MissingVertex,
         MissingEdge,
         InvalidEdgeConnection,
-        NonFinitePosition
+        NonFinitePosition,
+        InvalidArcGeometry,
+        InvalidArcContinuity
     };
 
     struct ValidationIssue

@@ -1,6 +1,7 @@
 #include "SolverDetail.h"
 
 #include <cad_core/model/Document.h>
+#include <cad_core/model/ArcContinuity.h>
 #include <cad_core/constraints/ContinuityConstraint.h>
 
 #include <algorithm>
@@ -8,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 namespace
 {
@@ -143,8 +145,19 @@ namespace cad::solver::detail
         if (!std::isfinite(step) || step <= 0)
             return std::nullopt;
 
+        Document probe = document;
+        const bool hasArcs = hasCircularArcs(document);
+        if (hasArcs && !updateArcBulges(probe))
+            return std::nullopt;
+        std::vector<std::pair<EdgeId, double>> baseBulges;
+        if (hasArcs)
+            for (const auto& [polygonId, polygon] : probe.getPolygons())
+                for (const auto id : polygon.edges)
+                    if (const auto* arc = std::get_if<CircularArc>(&probe.findEdge(id)->geometry))
+                        baseBulges.emplace_back(id, arc->bulge);
+
         // Validate every relation, including those unrelated to the supplied variables.
-        const auto sourceErrors = evaluateErrors(document, lengths, parallels, joins);
+        const auto sourceErrors = evaluateErrors(probe, lengths, parallels, joins);
         if (!sourceErrors || sourceErrors->size() != rowCount)
             return std::nullopt;
         const bool currentBase = std::equal(sourceErrors->begin(), sourceErrors->end(), baseErrors.begin());
@@ -153,7 +166,6 @@ namespace cad::solver::detail
         affected.reserve(groups.size());
 
         DenseMatrix jacobian(rowCount, std::vector<double>(2 * variables.size(), 0.0));
-        Document probe = document;
         for (std::size_t pointIndex = 0; pointIndex < variables.size(); ++pointIndex)
         {
             const auto position = getPointPosition(document, variables[pointIndex]);
@@ -181,7 +193,8 @@ namespace cad::solver::detail
                     return std::nullopt;
 
                 (axis == 0 ? samplePosition.x : samplePosition.y) = shifted;
-                if (!setPointPosition(probe, variables[pointIndex], samplePosition))
+                if (!setPointPosition(probe, variables[pointIndex], samplePosition) ||
+                    (hasArcs && !updateArcBulges(probe)))
                     return std::nullopt;
 
                 const std::size_t column = 2 * pointIndex + axis;
@@ -233,6 +246,9 @@ namespace cad::solver::detail
                 // Restore exactly, so neither X/Y nor successive points share a perturbation.
                 if (!setPointPosition(probe, variables[pointIndex], *position))
                     return std::nullopt;
+                for (const auto& [id, bulge] : baseBulges)
+                    if (!probe.setArcBulge(id, bulge))
+                        return std::nullopt;
             }
         }
         return jacobian;

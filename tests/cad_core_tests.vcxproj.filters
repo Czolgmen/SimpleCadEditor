@@ -37,6 +37,9 @@
     <ClCompile Include="solver\ContinuitySolverTests.cpp">
       <Filter>solver</Filter>
     </ClCompile>
+    <ClCompile Include="solver\ArcSolverTests.cpp">
+      <Filter>solver</Filter>
+    </ClCompile>
     <ClCompile Include="constraints\FixedLengthConstraintTests.cpp">
       <Filter>constraints</Filter>
     </ClCompile>
@@ -47,6 +50,15 @@
       <Filter>constraints</Filter>
     </ClCompile>
     <ClCompile Include="core\DocumentTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\DocumentArcTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\ArcContinuityTests.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\ArcConversionTests.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\DocumentParallelTests.cpp">

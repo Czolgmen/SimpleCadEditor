@@ -116,6 +116,12 @@ namespace cad::tests
                     requireSameCurvePoint(result.control1, id == translated ? curve->control1 + delta : curve->control1);
                     requireSameCurvePoint(result.control2, id == translated ? curve->control2 + delta : curve->control2);
                 }
+                else if (const auto* arc = std::get_if<CircularArc>(&b->geometry))
+                {
+                    const double bulge = std::get<CircularArc>(a->geometry).bulge;
+                    require(bulge == arc->bulge || (std::isnan(bulge) && std::isnan(arc->bulge)),
+                        "Arc bulge changed unexpectedly");
+                }
             }
         }
         const auto a = actual.getFixedLengthConstraints(), b = before.getFixedLengthConstraints();

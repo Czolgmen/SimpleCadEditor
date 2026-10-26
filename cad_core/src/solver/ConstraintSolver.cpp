@@ -1,6 +1,7 @@
 #include <cad_core/solver/ConstraintSolver.h>
 #include <cad_core/model/Document.h>
 #include <cad_core/model/ContinuityJoins.h>
+#include <cad_core/model/ArcContinuity.h>
 #include <cad_core/solver/SolverPoint.h>
 #include <cad_core/constraints/ContinuityConstraint.h>
 #include "SolverDetail.h"
@@ -14,6 +15,16 @@
 
 namespace cad::solver::detail
 {
+    bool hasCircularArcs(const Document& document)
+    {
+        for (const auto& [polygonId, polygon] : document.getPolygons())
+            for (const auto id : polygon.edges)
+                if (const auto* edge = document.findEdge(id);
+                    edge && std::holds_alternative<CircularArc>(edge->geometry))
+                    return true;
+        return false;
+    }
+
     std::optional<std::vector<double>> evaluateErrors(
         const Document& document,
         std::span<const constraint::FixedLengthConstraint> constraints)
@@ -321,7 +332,19 @@ namespace
 
             const auto* start = document.findVertex(edge->start);
             const auto* end = document.findVertex(edge->end);
-            return start && end && includeDistance(start->position, end->position);
+            if (!start || !end || !includeDistance(start->position, end->position))
+                return false;
+            if (const auto* arc = std::get_if<CircularArc>(&edge->geometry))
+            {
+                // Sagitta captures the extent of major arcs. Radius alone would
+                // overestimate nearly straight minor arcs by arbitrarily much.
+                const double sagitta = 0.5 * std::hypot(end->position.x - start->position.x,
+                    end->position.y - start->position.y) * std::abs(arc->bulge);
+                if (!std::isfinite(sagitta))
+                    return false;
+                scale = std::max(scale, sagitta);
+            }
+            return true;
         };
 
         for (const auto& relation : lengths)
@@ -655,6 +678,7 @@ namespace
             return false;
 
         Document trial = candidate;
+        const bool hasArcs = hasCircularArcs(candidate);
         for (const auto& point : variables)
         {
             const auto original = getPointPosition(candidate, point);
@@ -677,7 +701,10 @@ namespace
                         if (!std::isfinite(coordinate) || coordinate == before)
                             continue;
 
-                        if (!setPointPosition(trial, point, position))
+                        if (hasArcs)
+                            trial = candidate;
+                        if (!setPointPosition(trial, point, position) ||
+                            (hasArcs && !updateArcBulges(trial)))
                             continue;
                         auto trialErrors = evaluateErrors(trial, lengths, parallels, joins);
                         const auto trialNorm = trialErrors && !hasZeroLengthEdge(trial, lengths, parallels)
@@ -812,8 +839,19 @@ namespace cad::solver::detail
         if (!std::isfinite(options.lengthTolerance) || options.lengthTolerance <= 0 ||
             !std::isfinite(options.parallelTolerance) || options.parallelTolerance <= 0 ||
             !std::isfinite(options.g1Tolerance) || options.g1Tolerance <= 0 ||
-            !std::isfinite(options.c1Tolerance) || options.c1Tolerance <= 0 ||
-            !document.validate().empty())
+            !std::isfinite(options.c1Tolerance) || options.c1Tolerance <= 0)
+            return {SolveStatus::InvalidInput, 0};
+
+        const bool hasArcs = hasCircularArcs(document);
+        std::optional<Document> prepared;
+        if (hasArcs)
+        {
+            prepared = document;
+            if (!updateArcBulges(*prepared))
+                return {SolveStatus::InvalidInput, 0};
+        }
+        const Document& source = prepared ? *prepared : document;
+        if (!source.validate().empty())
             return {SolveStatus::InvalidInput, 0};
 
         const auto fixedPosition = getPointPosition(document, fixedPoint);
@@ -828,19 +866,24 @@ namespace cad::solver::detail
         if (const auto failure = validateRelations(document, lengths, parallels))
             return {*failure, 0};
 
-        const auto joins = collectContinuityJoins(document);
+        const auto joins = collectContinuityJoins(source);
         if (!joins)
             return {SolveStatus::InvalidInput, 0};
         const auto kinds = buildResidualKinds(lengths.size(), parallels.size(), *joins);
-        auto errors = evaluateErrors(document, lengths, parallels, *joins);
+        auto errors = evaluateErrors(source, lengths, parallels, *joins);
         if (!kinds || !errors || kinds->size() != errors->size())
             return {SolveStatus::InvalidInput, 0};
         if (allSatisfied(*errors, *kinds, options))
+        {
+            // Analytic arc fitting consumes no coordinate correction iterations.
+            if (prepared)
+                document = std::move(*prepared);
             return {SolveStatus::Converged, 0};
+        }
         if (options.maxIterations == 0)
             return {SolveStatus::NoConvergence, 0};
 
-        Document candidate = document;
+        Document candidate = prepared ? std::move(*prepared) : document;
         const auto variables = collectSolverPoints(candidate, lengths, parallels, *joins, fixedPoint, fixedVertices);
         const auto scale = geometryScale(candidate, lengths, parallels, *joins);
         if (!scale)
@@ -853,6 +896,8 @@ namespace cad::solver::detail
         {
             if (allSatisfied(*errors, *kinds, options))
             {
+                if (hasArcs && !updateArcBulges(candidate))
+                    return {SolveStatus::NoConvergence, iterations};
                 const auto finalErrors = evaluateErrors(candidate, lengths, parallels, *joins);
                 const auto finalFixed = getPointPosition(candidate, fixedPoint);
                 if (!finalErrors || !allSatisfied(*finalErrors, *kinds, options) ||
@@ -884,8 +929,8 @@ namespace cad::solver::detail
             if (!currentNorm)
                 return {SolveStatus::NoConvergence, iterations};
 
-            // Every correction overwrites all variables relative to candidate, so
-            // rejected step sizes can reuse this document without copying its maps.
+            // Coordinate-only trials can reuse their maps. Arc trials also reset
+            // bulges so rejected fits never become the next trial's reference.
             Document trial = candidate;
             bool accepted = false;
             for (unsigned attempt = 0; attempt < 10 && !accepted; ++attempt)
@@ -898,7 +943,10 @@ namespace cad::solver::detail
                     double step = 1.0;
                     for (unsigned backtrack = 0; backtrack < 16; ++backtrack, step *= 0.5)
                     {
-                        if (!applyCorrection(trial, candidate, variables, *delta, *scale, step))
+                        if (hasArcs)
+                            trial = candidate;
+                        if (!applyCorrection(trial, candidate, variables, *delta, *scale, step) ||
+                            (hasArcs && !updateArcBulges(trial)))
                             continue;
                         auto trialErrors = evaluateErrors(trial, lengths, parallels, *joins);
                         if (!trialErrors || hasZeroLengthEdge(trial, lengths, parallels))

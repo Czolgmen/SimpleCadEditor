@@ -65,6 +65,10 @@ namespace cad
         void removeParallelsForEdge(EdgeId edge);
 
         bool convertEdgeToBezier(EdgeId id);
+        // Creates a positive semicircle without solving G1; preserves continuity.
+        // Rejects C1, two G1 ends and invalid circle parameters before any changes.
+        // Existing valid arcs retain their bulge. New arcs lose segment relations.
+        bool convertEdgeToArc(EdgeId id);
         bool convertEdgeToSegment(EdgeId id);
 
         bool moveControlPoint(
@@ -73,6 +77,8 @@ namespace cad
         );
         
         bool setContinuity(VertexId id, Continuity continuity);
+
+        bool setArcBulge(EdgeId id, double bulge);
 
     };
 

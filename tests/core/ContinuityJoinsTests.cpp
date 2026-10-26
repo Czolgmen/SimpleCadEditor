@@ -411,6 +411,98 @@ namespace
             require(!continuityErrors(f.document, f.join(type)), "Invalid continuity class accepted");
     }
 
+    void documentErrorsUseArcTangentsWithSegments()
+    {
+        for (const bool incoming : {false, true})
+        for (const double sign : {-1.0, 1.0})
+        {
+            Fixture f;
+            f.vertex(2).position = {24, 0};
+            f.edge(incoming ? 0 : 1).geometry = CircularArc{sign};
+            requireErrors(f.document, f.join(), {-sign * std::numbers::pi / 2});
+
+            Fixture aligned;
+            aligned.edge(incoming ? 0 : 1).geometry = CircularArc{sign};
+            if (incoming) aligned.vertex(2).position = {12, sign * 9};
+            else aligned.vertex(0).position = {12 - sign * 12, 0};
+            requireErrors(aligned.document, aligned.join(), {0});
+        }
+    }
+
+    void documentErrorsUseArcTangentsWithBeziers()
+    {
+        for (const double sign : {-1.0, 1.0})
+        {
+            Fixture incoming;
+            incoming.edge(0).geometry = CircularArc{sign};
+            incoming.edge(1).geometry = CubicBezier{{12, sign * 3}, {-20, 15}};
+            requireErrors(incoming.document, incoming.join(), {0});
+
+            Fixture outgoing;
+            outgoing.edge(0).geometry = CubicBezier{{-20, 15}, {12 - sign * 2, 0}};
+            outgoing.edge(1).geometry = CircularArc{sign};
+            requireErrors(outgoing.document, outgoing.join(), {0});
+        }
+    }
+
+    void documentErrorsPropagateInvalidArcTangents()
+    {
+        for (const bool incoming : {false, true})
+        {
+            for (const double bulge : {0.0, std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::infinity()})
+            {
+                Fixture f;
+                f.edge(incoming ? 0 : 1).geometry = CircularArc{bulge};
+                require(!continuityErrors(f.document, f.join()), "Invalid arc G1 accepted");
+            }
+            Fixture coincident;
+            coincident.edge(incoming ? 0 : 1).geometry = CircularArc{};
+            coincident.vertex(incoming ? 0 : 2).position = coincident.vertex(1).position;
+            require(!continuityErrors(coincident.document, coincident.join()), "Coincident arc G1 accepted");
+
+            Fixture overflow;
+            const double halfMaximum = std::numeric_limits<double>::max() / 2;
+            overflow.vertex(1).position = {incoming ? halfMaximum : -halfMaximum, 0};
+            overflow.vertex(incoming ? 0 : 2).position = {incoming ? -halfMaximum : halfMaximum, 0};
+            overflow.edge(incoming ? 0 : 1).geometry = CircularArc{};
+            require(!continuityErrors(overflow.document, overflow.join()), "Overflowed arc derivative accepted");
+        }
+    }
+
+    void g0DoesNotRequireRepresentableDerivatives()
+    {
+        const double maximum = std::numeric_limits<double>::max();
+        for (int kind = 0; kind < 3; ++kind)
+        {
+            Fixture f;
+            const double extent = kind == 0 ? maximum : maximum / 2;
+            f.vertex(0).position = {-extent, 0};
+            f.vertex(1).position = {extent, 0};
+            f.vertex(2).position = {};
+            if (kind == 1) f.edge(0).geometry = CubicBezier{{}, {-extent, 0}};
+            if (kind == 2) f.edge(0).geometry = CircularArc{};
+            requireErrors(f.document, f.join(Continuity::G0), {});
+            require(!continuityErrors(f.document, f.join()), "Unrepresentable G1 derivative accepted");
+            f.edge(0).start = VertexId{};
+            require(!continuityErrors(f.document, f.join(Continuity::G0)), "G0 skipped reference checks");
+        }
+    }
+
+    void documentArcJoinsRejectC1()
+    {
+        for (int mask = 1; mask <= 3; ++mask)
+        {
+            Fixture f;
+            if (mask & 1) f.edge(0).geometry = CircularArc{};
+            if (mask & 2) f.edge(1).geometry = CircularArc{};
+            requireErrors(f.document, f.join(Continuity::G0), {});
+            const auto g1 = continuityErrors(f.document, f.join());
+            require(g1 && g1->size() == 1 && std::isfinite(g1->front()), "Valid arc G1 rejected");
+            require(!continuityErrors(f.document, f.join(Continuity::C1)), "C1 arc join accepted");
+        }
+    }
+
     void collectingAndEvaluatingDoNotModifyDocument()
     {
         CurveTestScene scene;
@@ -457,7 +549,12 @@ namespace cad::tests
             TestCase{"one zero derivative is rejected only by G1", oneZeroDerivativeIsRejectedOnlyByG1},
             TestCase{"document errors reject derivative overflow", documentErrorsRejectDerivativeOverflow},
             TestCase{"document errors reject invalid continuity class", documentErrorsRejectInvalidContinuityClass},
-            TestCase{"collecting and evaluating do not modify document", collectingAndEvaluatingDoNotModifyDocument}
+            TestCase{"collecting and evaluating do not modify document", collectingAndEvaluatingDoNotModifyDocument},
+            TestCase{"document errors use arc tangents with segments", documentErrorsUseArcTangentsWithSegments},
+            TestCase{"document errors use arc tangents with Beziers", documentErrorsUseArcTangentsWithBeziers},
+            TestCase{"document errors propagate invalid arc tangents", documentErrorsPropagateInvalidArcTangents},
+            TestCase{"G0 does not require representable derivatives", g0DoesNotRequireRepresentableDerivatives},
+            TestCase{"document arc joins reject C1", documentArcJoinsRejectC1}
         };
         return tests;
     }

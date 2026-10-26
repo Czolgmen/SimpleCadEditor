@@ -1,5 +1,6 @@
 #include <cad_core/model/Document.h>
 #include <cad_core/geometry/Bezier.h>
+#include <cad_core/geometry/Arc.h>
 #include <algorithm>
 #include <iterator>
 #include <numeric>
@@ -122,10 +123,43 @@ namespace cad {
 
                 // An edge can reference missing endpoints even when the polygon's
                 // own vertex list contains only valid IDs.
-                if (findVertex(edge->start) == nullptr)
+                const Vertex* start = findVertex(edge->start);
+                const Vertex* end = findVertex(edge->end);
+                if (start == nullptr)
                     issues.push_back({ValidationError::MissingVertex, polygonId, edge->start, edgeId});
-                if (edge->end != edge->start && findVertex(edge->end) == nullptr)
+                if (edge->end != edge->start && end == nullptr)
                     issues.push_back({ValidationError::MissingVertex, polygonId, edge->end, edgeId});
+
+                if (const auto* arc = std::get_if<CircularArc>(&edge->geometry))
+                {
+                    bool invalidGeometry = !std::isfinite(arc->bulge) || arc->bulge == 0.0;
+                    bool invalidContinuity = false;
+                    // Missing references have already been reported. Validate
+                    // independent parameters without dereferencing absent vertices.
+                    if (start && end)
+                    {
+                        invalidGeometry = invalidGeometry ||
+                            !std::isfinite(start->position.x) || !std::isfinite(start->position.y) ||
+                            !std::isfinite(end->position.x) || !std::isfinite(end->position.y) ||
+                            (start->position.x == end->position.x && start->position.y == end->position.y);
+
+                        const auto startContinuity = start->continuity.value;
+                        const auto endContinuity = end->continuity.value;
+                        const auto allowed = [](Continuity value)
+                        {
+                            return value == Continuity::G0 || value == Continuity::G1;
+                        };
+                        invalidContinuity = !allowed(startContinuity) || !allowed(endContinuity) ||
+                            (startContinuity == Continuity::G1 && endContinuity == Continuity::G1);
+                        if (startContinuity == Continuity::G0 && endContinuity == Continuity::G0 &&
+                            arc->bulge != 1.0 && arc->bulge != -1.0)
+                            invalidGeometry = true;
+                    }
+                    if (invalidGeometry)
+                        issues.push_back({ValidationError::InvalidArcGeometry, polygonId, {}, edgeId});
+                    if (invalidContinuity)
+                        issues.push_back({ValidationError::InvalidArcContinuity, polygonId, {}, edgeId});
+                }
 
                 // Extra edges have no corresponding slot in the vertex cycle.
                 // Their count has already been reported; avoid invalid indexing.
@@ -136,6 +170,7 @@ namespace cad {
                 const VertexId expectedEnd = polygon.vertices[(i + 1) % vertexCount];
                 if (edge->start != expectedStart || edge->end != expectedEnd)
                     issues.push_back({ValidationError::InvalidEdgeConnection, polygonId, {}, edgeId});
+
             }
         }
 
@@ -535,6 +570,39 @@ namespace cad {
         return true;
     }
 
+    bool Document::convertEdgeToArc(EdgeId id)
+    {
+        const auto it = edges.find(id);
+        if (it == edges.end())
+            return false;
+        const auto* start = findVertex(it->second.start);
+        const auto* end = findVertex(it->second.end);
+        if (!start || !end)
+            return false;
+
+        const auto allowed = [](Continuity value)
+        {
+            return value == Continuity::G0 || value == Continuity::G1;
+        };
+        const auto first = start->continuity.value;
+        const auto last = end->continuity.value;
+        if (!allowed(first) || !allowed(last) || (first == Continuity::G1 && last == Continuity::G1))
+            return false;
+
+        const auto* existing = std::get_if<CircularArc>(&it->second.geometry);
+        const double bulge = existing ? existing->bulge : 1.0;
+        if (!computeArcParameters(start->position, end->position, bulge) ||
+            (first == Continuity::G0 && last == Continuity::G0 && bulge != 1.0 && bulge != -1.0))
+            return false;
+        if (existing)
+            return true;
+
+        removeFixedLength(id);
+        removeParallelsForEdge(id);
+        it->second.geometry = CircularArc{bulge};
+        return true;
+    }
+
     bool Document::convertEdgeToSegment(EdgeId id)
     {
         auto it = edges.find(id);
@@ -594,6 +662,47 @@ namespace cad {
             ContinuitySource::Explicit
         };
 
+        return true;
+    }
+    bool Document::setArcBulge(EdgeId id, double bulge)
+    {
+        const auto it = edges.find(id);
+        if(it == edges.end())
+            return false;
+        
+        auto* arc = std::get_if<CircularArc>(&it->second.geometry);
+        if (!arc)
+            return false;
+
+        const auto* start = findVertex(it->second.start);
+        const auto* end = findVertex(it->second.end);
+
+        if (!start || !end)
+            return false;
+
+        const auto startContinuity = start->continuity.value;
+        const auto endContinuity = end->continuity.value;
+
+        const auto allowed = [](Continuity value) {
+            return value == Continuity::G0 ||
+                   value == Continuity::G1;
+        };
+
+        if (!allowed(startContinuity) || !allowed(endContinuity))
+            return false;
+
+        if (startContinuity == Continuity::G1 && endContinuity == Continuity::G1)
+            return false;
+        
+        if (startContinuity == Continuity::G0 && endContinuity == Continuity::G0 && bulge != 1.0 && bulge != -1.0)
+        {
+            return false;
+        }
+
+        if (!computeArcParameters(start->position, end->position, bulge))
+            return false;
+
+        arc->bulge = bulge;
         return true;
     }
 }

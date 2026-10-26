@@ -102,6 +102,15 @@ namespace
         if (!continuity)
             return AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Ciągłość wierzchołka") != FALSE;
 
+        bool hasArc = false;
+        const auto selectedVertex = *editor.selection().vertex;
+        for (const auto& [polygonId, polygon] : editor.document().getPolygons())
+            for (const auto id : polygon.edges)
+                if (const auto* edge = editor.document().findEdge(id);
+                    edge && (edge->start == selectedVertex || edge->end == selectedVertex) &&
+                    std::holds_alternative<cad::CircularArc>(edge->geometry))
+                    hasArc = true;
+
         UINT checkedCommand;
         switch (*continuity)
         {
@@ -116,7 +125,7 @@ namespace
             return false;
         if (!AppendMenuW(submenu, MF_STRING, IDM_CONTINUITY_G0, L"G0 - wspólny punkt") ||
             !AppendMenuW(submenu, MF_STRING, IDM_CONTINUITY_G1, L"G1 - zgodny kierunek stycznych") ||
-            !AppendMenuW(submenu, MF_STRING, IDM_CONTINUITY_C1, L"C1 - zgodne pochodne") ||
+            !AppendMenuW(submenu, MF_STRING | (hasArc ? MF_GRAYED : 0), IDM_CONTINUITY_C1, L"C1 - zgodne pochodne") ||
             !CheckMenuRadioItem(submenu, IDM_CONTINUITY_G0, IDM_CONTINUITY_C1, checkedCommand, MF_BYCOMMAND) ||
             !AppendMenuW(menu, MF_STRING | MF_POPUP, reinterpret_cast<UINT_PTR>(submenu), L"Ciągłość wierzchołka"))
         {
@@ -124,6 +133,21 @@ namespace
             return false;
         }
         return true; // The parent menu owns the submenu after a successful append.
+    }
+
+    bool appendEdgeConversionMenu(HMENU menu, const cad::editor::EditorSession& editor)
+    {
+        const auto selected = editor.selection().edge;
+        const auto* edge = selected ? editor.document().findEdge(*selected) : nullptr;
+        const bool segment = edge && std::holds_alternative<cad::LineSegment>(edge->geometry);
+        const bool bezier = edge && std::holds_alternative<cad::CubicBezier>(edge->geometry);
+        const bool arc = edge && std::holds_alternative<cad::CircularArc>(edge->geometry);
+        return AppendMenuW(menu, MF_STRING | (segment || arc ? MF_ENABLED : MF_GRAYED),
+                   IDM_CONVERT_TO_BEZIER, L"Zamień na Béziera") &&
+            AppendMenuW(menu, MF_STRING | (segment || bezier ? MF_ENABLED : MF_GRAYED),
+                   IDM_CONVERT_TO_ARC, L"Zamień na łuk okręgu") &&
+            AppendMenuW(menu, MF_STRING | (bezier || arc ? MF_ENABLED : MF_GRAYED),
+                   IDM_CONVERT_TO_SEGMENT, L"Zamień na odcinek");
     }
 
     cad::win32::AppState* getAppState(HWND window)
@@ -471,11 +495,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto edgeLength = state->editor.selectedEdgeLength();
         const UINT parallelFlags = MF_STRING | (edgeLength && *edgeLength > 0.0 ? MF_ENABLED : MF_GRAYED);
         const auto menuEdge = state->editor.selection().edge;
-        const auto* selectedEdge = menuEdge ? state->editor.document().findEdge(*menuEdge) : nullptr;
-        const bool isSegment = selectedEdge && std::holds_alternative<cad::LineSegment>(selectedEdge->geometry);
-        const bool isBezier = selectedEdge && std::holds_alternative<cad::CubicBezier>(selectedEdge->geometry);
-        const UINT toBezierFlags = MF_STRING | (isSegment ? MF_ENABLED : MF_GRAYED);
-        const UINT toSegmentFlags = MF_STRING | (isBezier ? MF_ENABLED : MF_GRAYED);
         std::vector<cad::EdgeId> parallelRemovalTargets;
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
@@ -488,8 +507,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             !AppendMenuW(menu, parallelFlags, IDM_ADD_PARALLEL, L"Ustaw równoległość z...") ||
             !appendParallelRemovalMenu(menu, state->editor, parallelRemovalTargets) ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
-            !AppendMenuW(menu, toBezierFlags, IDM_CONVERT_TO_BEZIER, L"Zamień na Béziera") ||
-            !AppendMenuW(menu, toSegmentFlags, IDM_CONVERT_TO_SEGMENT, L"Zamień na odcinek"))
+            !appendEdgeConversionMenu(menu, state->editor))
         {
             DestroyMenu(menu);
             return 0;
@@ -547,6 +565,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 return 0;
             }
             case IDM_CONVERT_TO_BEZIER:
+            case IDM_CONVERT_TO_ARC:
             case IDM_CONVERT_TO_SEGMENT:
             {
                 auto* state = getAppState(hWnd);
@@ -554,10 +573,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     return 0;
                 const bool converted = wmId == IDM_CONVERT_TO_BEZIER
                     ? state->editor.convertSelectedEdgeToBezier()
+                    : wmId == IDM_CONVERT_TO_ARC ? state->editor.convertSelectedEdgeToArc()
                     : state->editor.convertSelectedEdgeToSegment();
                 if (!converted)
                 {
-                    MessageBoxW(hWnd, L"Nie udało się zmienić typu krawędzi. Dokument nie został zmieniony.",
+                    MessageBoxW(hWnd, wmId == IDM_CONVERT_TO_ARC
+                        ? L"Nie udało się zmienić krawędzi na łuk. Łuk wymaga różnych końców i ciągłości G0/G1, "
+                          L"z G1 najwyżej na jednym końcu. Sprawdź te ustawienia oraz ograniczenia sąsiadów. "
+                          L"Dokument nie został zmieniony."
+                        : L"Nie udało się zmienić typu krawędzi. Dokument nie został zmieniony.",
                         L"Konwersja krawędzi", MB_OK | MB_ICONWARNING);
                     return 0;
                 }

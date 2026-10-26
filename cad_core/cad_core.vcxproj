@@ -86,6 +86,7 @@
     <ClInclude Include="include\cad_core\model\Vertex.h" />
     <ClInclude Include="include\cad_core\model\Continuity.h" />
     <ClInclude Include="include\cad_core\model\ContinuityJoins.h" />
+    <ClInclude Include="include\cad_core\model\ArcContinuity.h" />
     <ClInclude Include="include\cad_core\model\Edge.h" />
     <ClInclude Include="include\cad_core\model\EdgeGeometry.h" />
     <ClInclude Include="include\cad_core\model\EdgeSampling.h" />
@@ -110,6 +111,7 @@
     <ClCompile Include="src\model\EdgeSampling.cpp" />
     <ClCompile Include="src\model\EdgeTangents.cpp" />
     <ClCompile Include="src\model\ContinuityJoins.cpp" />
+    <ClCompile Include="src\model\ArcContinuity.cpp" />
     <ClCompile Include="src\solver\ConstraintSolver.cpp" />
     <ClCompile Include="src\solver\DenseLinearAlgebra.cpp" />
     <ClCompile Include="src\solver\Jacobian.cpp" />

@@ -1,5 +1,7 @@
 # Warstwa WinAPI/GDI
 
+PPM na krawędzi otwiera polecenia „Zamień na Béziera”, „Zamień na łuk okręgu” i „Zamień na odcinek”; bieżący typ jest nieaktywny. Shift+F10 korzysta z aktualnego zaznaczenia. Nowy łuk przy G0/G0 jest dodatnim półokręgiem. Przy pojedynczym G1 dopasowuje się do sąsiada. Konwersja zachowuje ustawienia ciągłości i odrzuca C1 lub G1 na obu końcach z komunikatem. Aby zmienić takie ustawienia, użyj menu ciągłości przy wierzchołku przed ponowieniem konwersji. Relacje długości i równoległości konwertowanej krawędzi są usuwane po udanej operacji; powrót do odcinka ich nie przywraca. Łuk korzysta ze wspólnego próbkowania przy rysowaniu i trafianiu. Podział łuku pozostaje nieaktywny do wdrożenia obsługi tej zmiany topologii.
+
 ```text
 src/platform/win32/
   AppState.h

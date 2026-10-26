@@ -2,9 +2,18 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 static bool failTimerAllocation = false;
 static unsigned presentRequests = 0;
+static unsigned messageBoxRequests = 0;
+static std::wstring lastMessageBoxText;
+static int WINAPI testMessageBoxW(HWND, LPCWSTR text, LPCWSTR, UINT)
+{
+    ++messageBoxRequests;
+    lastMessageBoxText = text;
+    return IDOK;
+}
 static BOOL WINAPI testUpdateWindow(HWND window)
 {
     ++presentRequests;
@@ -15,15 +24,19 @@ static UINT_PTR WINAPI testSetTimer(HWND window, UINT_PTR id, UINT interval, TIM
     return failTimerAllocation ? 0 : ::SetTimer(window, id, interval, callback);
 }
 
-// Exercise the actual window procedure, including its private timer ID. Only
-// timer-allocation failure is injected. Count presentation requests because
+// Exercise the actual window procedure, including its private timer ID. Inject
+// timer-allocation failure and record modal messages without opening dialogs.
+// Count presentation requests because
 // Windows omits painting for hidden test windows; still call the real WinAPI.
 #define SetTimer testSetTimer
 #define UpdateWindow testUpdateWindow
+#define MessageBoxW testMessageBoxW
 #include "../../Projecr1_GK.cpp"
 #undef SetTimer
 #undef UpdateWindow
+#undef MessageBoxW
 #include "../CurveTestSupport.h"
+#include <cad_core/model/EdgeSampling.h>
 
 namespace
 {
@@ -178,6 +191,115 @@ namespace
         requireSameCurvePoint(curveHandlePosition(f.state.editor.document(), f.control), {100, 50});
     }
 
+    void arcContinuityMenuDisablesC1OnlyForArcVertices()
+    {
+        for (const bool arc : {false, true})
+        {
+            Document document;
+            const std::array positions{Vec2{0, 0}, Vec2{50, 0}, Vec2{50, 50}, Vec2{0, 50}};
+            const auto polygon = *document.findPolygon(document.addPolygon(positions));
+            if (arc)
+                const_cast<Edge*>(document.findEdge(polygon.edges[0]))->geometry = CircularArc{};
+            else
+                require(document.convertEdgeToBezier(polygon.edges[0]), "Menu Bezier fixture failed");
+            editor::EditorSession editor(document);
+            require(editor.selectAt({0, 0}, 0), "Menu vertex selection failed");
+            HMENU menu = CreatePopupMenu();
+            require(menu != nullptr, "Menu allocation failed");
+            const bool appended = appendContinuityMenu(menu, editor);
+            const HMENU submenu = GetSubMenu(menu, 0);
+            const UINT c1 = submenu ? GetMenuState(submenu, IDM_CONTINUITY_C1, MF_BYCOMMAND) : UINT(-1);
+            const UINT g0 = submenu ? GetMenuState(submenu, IDM_CONTINUITY_G0, MF_BYCOMMAND) : UINT(-1);
+            const UINT g1 = submenu ? GetMenuState(submenu, IDM_CONTINUITY_G1, MF_BYCOMMAND) : UINT(-1);
+            DestroyMenu(menu);
+            require(appended && c1 != UINT(-1) && g0 != UINT(-1) && g1 != UINT(-1), "Continuity submenu missing");
+            require(((c1 & MF_GRAYED) != 0) == arc, "C1 availability does not match incident geometry");
+            require((g0 & (MF_GRAYED | MF_DISABLED)) == 0 && (g1 & (MF_GRAYED | MF_DISABLED)) == 0,
+                "Arc G0/G1 menu disabled");
+        }
+    }
+
+    Vec2 edgeMiddle(const Document& document, EdgeId id)
+    {
+        const auto* edge = document.findEdge(id);
+        const auto points = sampleEdge(edge->geometry, document.findVertex(edge->start)->position,
+            document.findVertex(edge->end)->position);
+        return points.size() == 2 ? (points.front() + points.back()) * 0.5 : points[points.size() / 2];
+    }
+
+    void edgeConversionMenuMatchesSelectedGeometry()
+    {
+        for (int kind = 0; kind < 4; ++kind)
+        {
+            Document document;
+            const std::array positions{Vec2{80, 80}, Vec2{240, 80}, Vec2{240, 200}, Vec2{80, 200}};
+            const auto polygon = *document.findPolygon(document.addPolygon(positions));
+            const EdgeId id = polygon.edges[0];
+            auto* edge = const_cast<Edge*>(document.findEdge(id));
+            if (kind == 2) edge->geometry = CubicBezier{{120, 40}, {200, 40}};
+            if (kind == 3) edge->geometry = CircularArc{};
+            editor::EditorSession editor(document);
+            if (kind != 0)
+                require(editor.selectAt(edgeMiddle(document, id), 0) && editor.selection().edge == id,
+                    "Conversion menu edge selection failed");
+            HMENU menu = CreatePopupMenu();
+            require(menu != nullptr, "Conversion menu allocation failed");
+            const bool appended = appendEdgeConversionMenu(menu, editor);
+            const std::array states{GetMenuState(menu, IDM_CONVERT_TO_SEGMENT, MF_BYCOMMAND),
+                GetMenuState(menu, IDM_CONVERT_TO_BEZIER, MF_BYCOMMAND), GetMenuState(menu, IDM_CONVERT_TO_ARC, MF_BYCOMMAND)};
+            DestroyMenu(menu);
+            require(appended, "Conversion menu append failed");
+            for (std::size_t i = 0; i < states.size(); ++i)
+            {
+                require(states[i] != UINT(-1), "Conversion command missing");
+                const bool enabled = (states[i] & (MF_GRAYED | MF_DISABLED)) == 0;
+                require(enabled == (kind != 0 && kind != static_cast<int>(i + 1)), "Wrong conversion menu availability");
+            }
+        }
+    }
+
+    void arcConversionCommandsRoundTripThroughWindowProcedure()
+    {
+        Fixture f;
+        Document document = f.state.editor.document();
+        const auto polygon = document.getPolygons().begin()->second;
+        const EdgeId id = polygon.edges[2];
+        require(document.setFixedLength(id, 160), "Command conversion length fixture failed");
+        f.state.editor = editor::EditorSession(document);
+        require(f.state.editor.selectAt(edgeMiddle(document, id), 0) && f.state.editor.selection().edge == id,
+            "Command edge selection failed");
+        const unsigned messages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_CONVERT_TO_ARC, 0), 0);
+        require(messageBoxRequests == messages && std::holds_alternative<CircularArc>(f.state.editor.document().findEdge(id)->geometry),
+            "Arc WM_COMMAND did not convert selected edge");
+        require(!f.state.editor.selectedEdgeLength() && !f.state.editor.selectedFixedLength(), "Arc retained segment length relation");
+        const auto& result = f.state.editor.document();
+        const Vec2 middle = edgeMiddle(result, id);
+        require(editor::hitTestEdge(result, middle, 0) == id, "Converted arc was not hit-tested on its curve");
+        f.requireStopped();
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_CONVERT_TO_SEGMENT, 0), 0);
+        require(messageBoxRequests == messages && std::holds_alternative<LineSegment>(f.state.editor.document().findEdge(id)->geometry),
+            "Segment WM_COMMAND did not restore arc chord");
+        document.removeFixedLength(id);
+        requireSameCurveDocument(f.state.editor.document(), document);
+        require(f.state.editor.selection().edge == id, "Conversion lost selection");
+    }
+
+    void failedArcCommandShowsReasonAndPreservesDocument()
+    {
+        Fixture f;
+        const EdgeId id = f.control.edge; // Default Bezier G1 at both endpoints.
+        require(f.state.editor.selectAt(edgeMiddle(f.state.editor.document(), id), 0) &&
+            f.state.editor.selection().edge == id, "Rejected command selection failed");
+        const Document before = f.state.editor.document();
+        const unsigned messages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_CONVERT_TO_ARC, 0), 0);
+        require(messageBoxRequests == messages + 1 && lastMessageBoxText.find(L"G0/G1") != std::wstring::npos,
+            "Rejected arc conversion did not explain allowed continuity");
+        requireSameCurveDocument(f.state.editor.document(), before);
+        require(f.state.editor.selection().edge == id, "Rejected command lost selection");
+    }
+
     void timerFailureKeepsImmediateDraggingFunctional()
     {
         Fixture f;
@@ -203,6 +325,10 @@ int main()
     if (!RegisterClassW(&klass))
         return 1;
     const std::array tests{
+        cad::tests::TestCase{"conversion menu matches selected geometry", edgeConversionMenuMatchesSelectedGeometry},
+        cad::tests::TestCase{"arc conversion commands round trip through WndProc", arcConversionCommandsRoundTripThroughWindowProcedure},
+        cad::tests::TestCase{"rejected arc command explains continuity and preserves state", failedArcCommandShowsReasonAndPreservesDocument},
+        cad::tests::TestCase{"arc continuity menu permits G0/G1 and disables C1", arcContinuityMenuDisablesC1OnlyForArcVertices},
         cad::tests::TestCase{"mouse burst uses latest position and presents", burstUsesOnlyLatestPositionAndPresents},
         cad::tests::TestCase{"release before tick uses final position", releaseBeforeTickUsesFinalPosition},
         cad::tests::TestCase{"release after preview flushes newer position", releaseAfterPreviewFlushesNewerPosition},

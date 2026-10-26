@@ -34,7 +34,9 @@ namespace cad::solver
     // Solves supplied lengths and active continuity joins from the document.
     // Commits positions only on Converged. iterations counts accepted corrections.
     // The fixed vertex stays exactly at its input position; zero maxIterations
-    // checks the input without corrections. Requires a topologically valid document.
+    // permits analytic arc fitting but no coordinate corrections. Arc bulges are
+    // fitted on candidates, including G0/G0 semicircles, and commit only on success.
+    // Requires a topologically valid document.
     SolveResult solveFixedLengths(
         Document& document,
         std::span<const cad::constraint::FixedLengthConstraint> constraints,

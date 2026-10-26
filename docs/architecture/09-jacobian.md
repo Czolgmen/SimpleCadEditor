@@ -60,6 +60,8 @@ Wynik powinien być bliski macierzy `[[0.6, 0.8]]`. Solver wykorzysta ją do wyz
 
 ## Skalowanie i testy
 
+Przy łukach Jacobian dopasowuje bulge na prywatnej kopii przed oceną bazową i po każdym próbnym przesunięciu. Po próbce odtwarza dokładnie pozycję oraz wszystkie bazowe bulge. Nie tworzy dodatkowej kolumny dla wygięcia: różniczkuje wynik zależny od wierzchołków i uchwytów po dopasowaniu łuków. evaluateErrors pozostaje odczytem zapisanej geometrii; przygotowanie jest jawne w solverze i Jacobim. Testy ArcSolverTests porównują macierz z pełnym próbkowaniem na świeżych kopiach, obejmując też pary łuków, powtórzone kolumny i odrzucenie niepoprawnej próbki.
+
 Dla wierszy długości zwracamy pochodne **surowego błędu względem współrzędnych świata**. Solver używa `F/scale` i korekty współrzędnych znormalizowanych `deltaWorld/scale`; przy wspólnej skali pochodna pozostaje taka sama: `d(F/scale)/d(x/scale) = dF/dx`. Dlatego próbkę długości dzielimy przez rzeczywisty krok świata `actualStep`.
 
 Wiersze równoległości są bezwymiarowe i ich błędów nie dzielimy przez skalę. Współrzędne nadal są znormalizowane, więc we wspólnym Jacobianie różnicę błędów równoległości dzielimy przez `actualStep / geometryScale`. Wynik jest pochodną względem `q = x/scale`. Nieskończony lub zerowy mianownik powoduje `nullopt`. Wejściowe `baseErrors` dla obu typów relacji pozostają surowe.

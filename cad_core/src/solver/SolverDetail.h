@@ -8,6 +8,8 @@
 
 namespace cad::solver::detail
 {
+    bool hasCircularArcs(const Document& document);
+
     // Raw signed errors in world units, in the same order as constraints.
     std::optional<std::vector<double>> evaluateErrors(
         const Document& document,
@@ -64,6 +66,8 @@ namespace cad::solver::detail
     // baseErrors are raw. Length/C1 residuals are divided by geometryScale;
     // Parallel/G1 residuals are dimensionless. G1 differences wrap across +/-pi.
     // Returns derivatives with respect to q = position / geometryScale.
+    // Arc bulges are fitted on private copies before sampling; positions and
+    // bulges are restored between coordinates. evaluateErrors itself reads raw geometry.
     std::optional<DenseMatrix> computePointJacobian(
         const Document& document,
         std::span<const constraint::FixedLengthConstraint> lengths,

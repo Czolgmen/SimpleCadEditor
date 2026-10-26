@@ -84,15 +84,27 @@ std::optional<std::vector<double>> cad::constraint::continuityErrors(const Docum
             return std::nullopt;
     }
 
-    const Vec2 incomingTangent = edgeEndTangent(
+    // G0 has no tangent equation, even if a finite-position edge has an
+    // unrepresentable derivative. References and positions were checked above.
+    if (join.continuity == Continuity::G0)
+        return std::vector<double>{};
+    if (join.continuity == Continuity::C1 &&
+        (std::holds_alternative<CircularArc>(incoming->geometry) ||
+         std::holds_alternative<CircularArc>(outgoing->geometry)))
+        return std::nullopt;
+
+    const auto incomingTangent = edgeEndTangent(
         incoming->geometry,
         incomingStart->position,
         incomingEnd->position);
 
-    const Vec2 outgoingTangent = edgeStartTangent(
+    const auto outgoingTangent = edgeStartTangent(
         outgoing->geometry,
         outgoingStart->position,
         outgoingEnd->position);
 
-    return continuityErrors(join.continuity, incomingTangent, outgoingTangent);
+    if (!incomingTangent || !outgoingTangent)
+        return std::nullopt;
+
+    return continuityErrors(join.continuity, *incomingTangent, *outgoingTangent);
 }

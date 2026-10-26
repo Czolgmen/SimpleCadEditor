@@ -430,6 +430,29 @@ namespace cad::editor
         return true;
     }
 
+    bool EditorSession::convertSelectedEdgeToArc()
+    {
+        if (!selection_.edge)
+            return false;
+        const auto* edge = document_.findEdge(*selection_.edge);
+        if (!edge)
+            return false;
+        const VertexId fixedVertex = edge->start;
+
+        Document candidate = document_;
+        if (!candidate.convertEdgeToArc(*selection_.edge))
+            return false;
+        const auto result = solver::solveConstraints(candidate, candidate.getFixedLengthConstraints(),
+            candidate.getParallelConstraints(), fixedVertex);
+        if (result.status != solver::SolveStatus::Converged)
+            return false;
+
+        document_ = std::move(candidate);
+        cancelParallelSelection();
+        pointerUp();
+        return true;
+    }
+
     bool EditorSession::convertSelectedEdgeToSegment()
     {
         if (!selection_.edge)
@@ -492,23 +515,24 @@ namespace cad::editor
         if (!vertex)
             return std::nullopt;
 
-        bool hasAdjacentBezier = false;
+        bool hasAdjacentCurve = false;
         for (const auto& [polygonId, polygon] : document_.getPolygons())
         {
             for (const EdgeId id : polygon.edges)
             {
                 const auto* edge = document_.findEdge(id);
                 if (edge && (edge->start == *selection_.vertex || edge->end == *selection_.vertex) &&
-                    std::holds_alternative<CubicBezier>(edge->geometry))
+                    (std::holds_alternative<CubicBezier>(edge->geometry) ||
+                     std::holds_alternative<CircularArc>(edge->geometry)))
                 {
-                    hasAdjacentBezier = true;
+                    hasAdjacentCurve = true;
                     break;
                 }
             }
-            if (hasAdjacentBezier)
+            if (hasAdjacentCurve)
                 break;
         }
-        if (!hasAdjacentBezier)
+        if (!hasAdjacentCurve)
             return std::nullopt;
 
         return vertex->continuity.value;

@@ -75,6 +75,9 @@
     <ClInclude Include="include\cad_core\model\ContinuityJoins.h">
       <Filter>include\model</Filter>
     </ClInclude>
+    <ClInclude Include="include\cad_core\model\ArcContinuity.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
     <ClInclude Include="include\cad_core\model\Edge.h">
       <Filter>include\model</Filter>
     </ClInclude>
@@ -141,6 +144,9 @@
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="src\model\ContinuityJoins.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="src\model\ArcContinuity.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="src\solver\ConstraintSolver.cpp">

@@ -91,7 +91,11 @@
     <ClCompile Include="solver\JacobianTests.cpp" />
     <ClCompile Include="solver\ContinuityJacobianTests.cpp" />
     <ClCompile Include="solver\ContinuitySolverTests.cpp" />
+    <ClCompile Include="solver\ArcSolverTests.cpp" />
     <ClCompile Include="core\DocumentTests.cpp" />
+    <ClCompile Include="core\DocumentArcTests.cpp" />
+    <ClCompile Include="core\ArcContinuityTests.cpp" />
+    <ClCompile Include="core\ArcConversionTests.cpp" />
     <ClCompile Include="core\DocumentParallelTests.cpp" />
     <ClCompile Include="core\EdgeConversionTests.cpp" />
     <ClCompile Include="core\EdgeSamplingTests.cpp" />

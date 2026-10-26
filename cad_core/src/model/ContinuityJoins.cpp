@@ -40,10 +40,17 @@ namespace cad
                 if (continuity == Continuity::G0)
                     continue;
 
-                const bool incomingBezier = std::holds_alternative<CubicBezier>(incoming->geometry);
-                const bool outgoingBezier = std::holds_alternative<CubicBezier>(outgoing->geometry);
+                const bool hasArc = std::holds_alternative<CircularArc>(incoming->geometry) ||
+                    std::holds_alternative<CircularArc>(outgoing->geometry);
+                const bool incomingCurve = std::holds_alternative<CubicBezier>(incoming->geometry) ||
+                    std::holds_alternative<CircularArc>(incoming->geometry);
+                const bool outgoingCurve = std::holds_alternative<CubicBezier>(outgoing->geometry) ||
+                    std::holds_alternative<CircularArc>(outgoing->geometry);
+
+                if (hasArc && continuity != Continuity::G1)
+                    return std::nullopt;
                 
-                if (!incomingBezier && !outgoingBezier)
+                if (!incomingCurve && !outgoingCurve)
                     continue;
 
                 joins.push_back({

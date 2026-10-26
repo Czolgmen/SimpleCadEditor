@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -242,6 +243,189 @@ namespace
         requireIssue(issues, ValidationError::NonFinitePosition, secondId, secondVertexId);
     }
 
+    void acceptsBothSemicircleSignsAtG0Ends()
+    {
+        for (std::size_t index = 0; index < 3; ++index)
+        for (const double bulge : {-1.0, 1.0})
+        {
+            Fixture fixture;
+            fixture.edge(index).geometry = CircularArc{bulge};
+            require(fixture.document.validate().empty(), "G0 semicircle was rejected");
+        }
+    }
+
+    void acceptsGeneralArcWithG1AtEitherEnd()
+    {
+        for (const double bulge : {-8.0, -2.0, -1.0, -0.5, 0.125, 0.5, 1.0, 2.0, 8.0})
+        for (std::size_t endpoint = 0; endpoint < 2; ++endpoint)
+        for (const auto source : {ContinuitySource::Default, ContinuitySource::Explicit})
+        {
+            Fixture fixture;
+            fixture.edge(0).geometry = CircularArc{bulge};
+            fixture.vertex(endpoint).continuity = {Continuity::G1, source};
+            require(fixture.document.validate().empty(), "Arc with one G1 end was rejected");
+        }
+    }
+
+    void rejectsZeroAndNonfiniteArcBulges()
+    {
+        for (const double bulge : {0.0, -0.0, std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()})
+        {
+            Fixture fixture;
+            fixture.edge(0).geometry = CircularArc{bulge};
+            const auto issues = fixture.document.validate();
+            require(issues.size() == 1, "Invalid bulge must produce one geometry issue");
+            requireIssue(issues, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, fixture.edge(0).id);
+        }
+    }
+
+    void rejectsNonSemicircleGeometryAtTwoG0Ends()
+    {
+        for (const double bulge : {-2.0, -0.5, 0.125, 0.5, 2.0,
+            std::nextafter(1.0, 0.0), std::nextafter(-1.0, 0.0)})
+        {
+            Fixture fixture;
+            fixture.edge(0).geometry = CircularArc{bulge};
+            const auto issues = fixture.document.validate();
+            require(issues.size() == 1, "Non-semicircle G0/G0 must produce one geometry issue");
+            requireIssue(issues, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, fixture.edge(0).id);
+        }
+    }
+
+    void rejectsCoincidentArcPositionsWithDistinctOrEqualIds()
+    {
+        for (const bool sameId : {false, true})
+        {
+            Fixture fixture;
+            auto& edge = fixture.edge(0);
+            edge.geometry = CircularArc{};
+            if (sameId)
+                edge.end = edge.start;
+            else
+                fixture.vertex(1).position = fixture.vertex(0).position;
+            const auto issues = fixture.document.validate();
+            require(issues.size() == (sameId ? 2u : 1u), "Unexpected diagnostics for coincident arc ends");
+            requireIssue(issues, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, edge.id);
+            if (sameId)
+                requireIssue(issues, ValidationError::InvalidEdgeConnection, fixture.polygonId, {}, edge.id);
+        }
+    }
+
+    void rejectsC1AndUnknownContinuityAtEitherArcEnd()
+    {
+        for (const auto continuity : {Continuity::C1, static_cast<Continuity>(-1), static_cast<Continuity>(3)})
+        for (std::size_t endpoint = 0; endpoint < 2; ++endpoint)
+        for (const auto source : {ContinuitySource::Default, ContinuitySource::Explicit})
+        {
+            Fixture fixture;
+            fixture.edge(0).geometry = CircularArc{};
+            fixture.vertex(endpoint).continuity = {continuity, source};
+            const auto issues = fixture.document.validate();
+            require(issues.size() == 1, "Invalid arc continuity must produce one issue");
+            requireIssue(issues, ValidationError::InvalidArcContinuity, fixture.polygonId, {}, fixture.edge(0).id);
+        }
+    }
+
+    void rejectsG1AtBothArcEndsRegardlessOfSource()
+    {
+        for (const double bulge : {-2.0, -1.0, 0.5, 1.0, 2.0})
+        for (const auto startSource : {ContinuitySource::Default, ContinuitySource::Explicit})
+        for (const auto endSource : {ContinuitySource::Default, ContinuitySource::Explicit})
+        {
+            Fixture fixture;
+            fixture.edge(0).geometry = CircularArc{bulge};
+            fixture.vertex(0).continuity = {Continuity::G1, startSource};
+            fixture.vertex(1).continuity = {Continuity::G1, endSource};
+            const auto issues = fixture.document.validate();
+            require(issues.size() == 1, "G1/G1 arc must produce one continuity issue");
+            requireIssue(issues, ValidationError::InvalidArcContinuity, fixture.polygonId, {}, fixture.edge(0).id);
+        }
+    }
+
+    void missingArcEndpointsAreReportedWithoutDereferencingThem()
+    {
+        for (int missingEnds = 0; missingEnds < 4; ++missingEnds)
+        for (const bool badBulge : {false, true})
+        {
+            Fixture fixture;
+            auto& edge = fixture.edge(0);
+            edge.geometry = CircularArc{badBulge ? 0.0 : 1.0};
+            const VertexId firstMissing{99999}, secondMissing{99998};
+            if (missingEnds != 1) edge.start = firstMissing;
+            if (missingEnds == 1 || missingEnds == 2) edge.end = firstMissing;
+            if (missingEnds == 3) edge.end = secondMissing;
+            const auto issues = fixture.document.validate();
+            requireIssue(issues, ValidationError::MissingVertex, fixture.polygonId, firstMissing, edge.id);
+            if (missingEnds == 3)
+                requireIssue(issues, ValidationError::MissingVertex, fixture.polygonId, secondMissing, edge.id);
+            requireIssue(issues, ValidationError::InvalidEdgeConnection, fixture.polygonId, {}, edge.id);
+            if (badBulge)
+                requireIssue(issues, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, edge.id);
+            require(issues.size() == (missingEnds == 3 ? 3u : 2u) + (badBulge ? 1u : 0u),
+                "Missing arc references produced incorrect or duplicate issues");
+        }
+    }
+
+    void validatesArcParametersEvenWhenVertexCycleIsEmpty()
+    {
+        Fixture fixture;
+        const EdgeId edge = fixture.edge(0).id;
+        fixture.edge(0).geometry = CircularArc{0};
+        fixture.vertex(0).continuity.value = Continuity::C1;
+        fixture.polygon().vertices.clear();
+        const auto issues = fixture.document.validate();
+        require(issues.size() == 4, "Malformed cycle hid arc diagnostics");
+        requireIssue(issues, ValidationError::TooFewVertices, fixture.polygonId);
+        requireIssue(issues, ValidationError::EdgeCountMismatch, fixture.polygonId);
+        requireIssue(issues, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, edge);
+        requireIssue(issues, ValidationError::InvalidArcContinuity, fixture.polygonId, {}, edge);
+    }
+
+    void rejectsNonfiniteArcEndpoints()
+    {
+        for (const double value : {std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()})
+        for (std::size_t endpoint = 0; endpoint < 2; ++endpoint)
+        for (const bool changeX : {false, true})
+        {
+            Fixture fixture;
+            fixture.edge(0).geometry = CircularArc{};
+            auto& vertex = fixture.vertex(endpoint);
+            (changeX ? vertex.position.x : vertex.position.y) = value;
+            const auto issues = fixture.document.validate();
+            require(issues.size() == 2, "Non-finite arc endpoint did not produce both diagnostics");
+            requireIssue(issues, ValidationError::NonFinitePosition, fixture.polygonId, vertex.id);
+            requireIssue(issues, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, fixture.edge(0).id);
+        }
+    }
+
+    void arcValidationDoesNotRepairMetadataOrConsumeIds()
+    {
+        Fixture fixture;
+        fixture.edge(0).geometry = CircularArc{0.5};
+        fixture.vertex(0).continuity.source = ContinuitySource::Explicit;
+        const Polygon before = fixture.polygon();
+        const Vertex start = fixture.vertex(0), end = fixture.vertex(1);
+        const Edge edge = fixture.edge(0);
+        const auto first = fixture.document.validate();
+        const auto second = fixture.document.validate();
+        require(first.size() == 1 && second.size() == 1, "Arc validation changed its own result");
+        requireIssue(first, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, edge.id);
+        requireIssue(second, ValidationError::InvalidArcGeometry, fixture.polygonId, {}, edge.id);
+        require(std::get<CircularArc>(fixture.edge(0).geometry).bulge == 0.5 &&
+            fixture.vertex(0).position == start.position && fixture.vertex(1).position == end.position &&
+            fixture.vertex(0).continuity == start.continuity && fixture.vertex(1).continuity == end.continuity &&
+            fixture.edge(0).start == edge.start && fixture.edge(0).end == edge.end &&
+            fixture.polygon().vertices == before.vertices && fixture.polygon().edges == before.edges,
+            "Arc validation implicitly repaired the document");
+        const auto next = fixture.document.addPolygon(triangle());
+        const auto& added = *fixture.document.findPolygon(next);
+        require(next.value == fixture.polygonId.value + 1 &&
+            added.vertices.front().value == before.vertices.back().value + 1 &&
+            added.edges.front().value == before.edges.back().value + 1, "Arc validation consumed IDs");
+    }
+
     void validationDoesNotModifyDocument()
     {
         Fixture fixture;
@@ -291,7 +475,18 @@ namespace cad::tests
             TestCase{"incorrect starts, ends and closing edge", reportsIncorrectConnections},
             TestCase{"NaN and infinity in either coordinate", reportsNonFinitePositions},
             TestCase{"collect all errors across polygons", collectsErrorsAcrossPolygons},
-            TestCase{"validation preserves topology, errors and ID counters", validationDoesNotModifyDocument}
+            TestCase{"validation preserves topology, errors and ID counters", validationDoesNotModifyDocument},
+            TestCase{"both semicircle signs are valid at G0 ends", acceptsBothSemicircleSignsAtG0Ends},
+            TestCase{"general arc accepts G1 at either end", acceptsGeneralArcWithG1AtEitherEnd},
+            TestCase{"zero and nonfinite arc bulges reject", rejectsZeroAndNonfiniteArcBulges},
+            TestCase{"non-semicircle geometry rejects at two G0 ends", rejectsNonSemicircleGeometryAtTwoG0Ends},
+            TestCase{"coincident arc positions reject for distinct or equal IDs", rejectsCoincidentArcPositionsWithDistinctOrEqualIds},
+            TestCase{"C1 and unknown classes reject at either arc end", rejectsC1AndUnknownContinuityAtEitherArcEnd},
+            TestCase{"G1 at both arc ends rejects regardless of source", rejectsG1AtBothArcEndsRegardlessOfSource},
+            TestCase{"missing arc ends are reported without dereferencing", missingArcEndpointsAreReportedWithoutDereferencingThem},
+            TestCase{"arc parameters are validated with empty vertex cycle", validatesArcParametersEvenWhenVertexCycleIsEmpty},
+            TestCase{"nonfinite arc endpoints reject", rejectsNonfiniteArcEndpoints},
+            TestCase{"arc validation preserves metadata and IDs", arcValidationDoesNotRepairMetadataOrConsumeIds}
         };
         return tests;
     }

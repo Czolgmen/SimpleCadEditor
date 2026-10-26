@@ -17,6 +17,10 @@ int main()
 {
     const std::array suites{
         TestSuite{"Document", cad::tests::documentTests()},
+        TestSuite{"DocumentArc", cad::tests::documentArcTests()},
+        TestSuite{"ArcContinuity", cad::tests::arcContinuityTests()},
+        TestSuite{"ArcSolver", cad::tests::arcSolverTests()},
+        TestSuite{"ArcConversion", cad::tests::arcConversionTests()},
         TestSuite{"DocumentParallel", cad::tests::documentParallelTests()},
         TestSuite{"EdgeConversion", cad::tests::edgeConversionTests()},
         TestSuite{"EdgeSampling", cad::tests::edgeSamplingTests()},

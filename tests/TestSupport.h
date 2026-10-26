@@ -20,6 +20,10 @@ namespace cad::tests
     }
 
     std::span<const TestCase> documentTests();
+    std::span<const TestCase> documentArcTests();
+    std::span<const TestCase> arcContinuityTests();
+    std::span<const TestCase> arcSolverTests();
+    std::span<const TestCase> arcConversionTests();
     std::span<const TestCase> documentParallelTests();
     std::span<const TestCase> edgeConversionTests();
     std::span<const TestCase> edgeSamplingTests();

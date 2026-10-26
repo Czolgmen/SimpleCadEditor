@@ -19,6 +19,7 @@
 #define IDM_CONTINUITY_G0            32778
 #define IDM_CONTINUITY_G1            32779
 #define IDM_CONTINUITY_C1            32780
+#define IDM_CONVERT_TO_ARC           32781
 #define IDD_FIXED_LENGTH             129
 #define IDC_LENGTH_EDIT              1000
 #define IDI_PROJECR1GK			107
@@ -35,7 +36,7 @@
 
 #define _APS_NO_MFC					130
 #define _APS_NEXT_RESOURCE_VALUE	130
-#define _APS_NEXT_COMMAND_VALUE		32781
+#define _APS_NEXT_COMMAND_VALUE		32782
 #define _APS_NEXT_CONTROL_VALUE		1001
 #define _APS_NEXT_SYMED_VALUE		110
 #endif

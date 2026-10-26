@@ -47,9 +47,10 @@ namespace cad::editor
         bool removeSelectedEdgeParallel(EdgeId other);
 
         bool convertSelectedEdgeToBezier();
+        bool convertSelectedEdgeToArc();
         bool convertSelectedEdgeToSegment();
 
-        // Requires an incident Bezier; stores an explicit choice and solves with the vertex pinned.
+        // Requires an incident Bezier or arc; stores an explicit choice and solves with the vertex pinned.
         // Failure preserves document and interaction; success commits and ends the gesture.
         bool setSelectedVertexContinuity(Continuity continuity);
 
