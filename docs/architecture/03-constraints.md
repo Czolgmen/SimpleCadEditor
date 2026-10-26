@@ -14,7 +14,7 @@ Wspólne rozwiązywanie nadal ma znaczenie: krzywa i sąsiedni odcinek współdz
 
 Zmienne numeryczne to współrzędne wierzchołków i punktów kontrolnych Béziera. Parametr bulge łuków jest dopasowywany analitycznie przez updateArcBulges przed oceną kandydata i każdej próbki Jacobiego; nie ma osobnej kolumny w macierzy. G0/G0 zachowuje znak półokręgu, a przy dwóch łukach G1 wygięcie łuku o mniejszym ID pozostaje referencją. Parametry takie jak zadana długość są stałymi. Końce krzywych nie mają osobnych współrzędnych poza wierzchołkami.
 
-Graf zależności łączy zmienne uczestniczące we wspólnej relacji. Podczas edycji rozwiązujemy tylko dotkniętą składową, z uwzględnieniem relacji między wielokątami. Nie zakładamy, że cała składowa mieści się w edytowanym wielokącie.
+Solver zbiera punkty występujące w przekazanych relacjach oraz aktywnych połączeniach ciągłości, także między wielokątami. Grupy reszt zapamiętują zależności od punktów, aby Jacobian przeliczał tylko zależne wiersze. Obecna implementacja nie wydziela osobnego podproblemu dotkniętej spójnej składowej.
 
 ## Równania
 
@@ -50,16 +50,16 @@ W obecnym prototypie długości dzielimy przez wspólną skalę geometrii, a bł
 
 Zerowy kierunek odcinka uczestniczącego w równoległości zwraca `DegenerateGeometry`; nieistniejące odwołania, relacja krawędzi z samą sobą, błędne parametry i przepełnienie wejściowych kierunków zwracają `InvalidInput`. Każdy sukces jest sprawdzany ponownie przed podmianą dokumentu. Niepowodzenie zachowuje pozycje, topologię i przechowywane relacje.
 
-Wynik: `Converged`, `InvalidInput`, `NoConvergence` lub `DegenerateGeometry`, wraz z resztami i identyfikatorami niespełnionych relacji. Brak zbieżności nie jest dowodem matematycznej sprzeczności układu.
+SolveResult zwraca status `Converged`, `InvalidInput`, `NoConvergence` lub `DegenerateGeometry` oraz liczbę zaakceptowanych korekt. Nie zawiera listy reszt ani identyfikatorów niespełnionych relacji. Brak zbieżności nie jest dowodem matematycznej sprzeczności układu.
 
 ## Priorytet ruchu użytkownika
 
 - Przesuwany wierzchołek lub uchwyt ma pozycję dokładnie wyznaczoną przez kursor w układzie świata. Solver nie może przyciągać go do innego miejsca.
-- Przy ruchu uchwytu publiczne przeciążenie `solveConstraints(ControlPointRef)` najpierw blokuje oba wierzchołki jego segmentu. Prywatna pętla usuwa te wierzchołki z niewiadomych i sprawdza przed zatwierdzeniem, że ich pozycje są dokładnie zachowane. Ta próba otrzymuje najwyżej `min(maxIterations, maxFixedEndpointIterations)` iteracji; domyślnie limit preferencji wynosi 8, a całkowity limit pozostaje równy 100. Wartość 0 pomija korekty z zablokowanymi końcami. Jeśli próba nie uzyska zbieżności i pozostaje budżet iteracji, ponawiamy obliczenia od tego samego dokumentu z odblokowanymi końcami. Obie próby dzielą `maxIterations`, a wynik sumuje zaakceptowane poprawki obu prób. Uchwyt pozostaje dokładnie przypięty w obu wariantach. Niepoprawne wejście jest odrzucane bez drugiej próby; nieudane obliczenia nie zmieniają dokumentu. Ruch końców jest więc wariantem rezerwowym. Oddzielny limit preferencji zapobiega zużyciu wszystkich iteracji na trudny problem z unieruchomionymi końcami. Jest limitem liczby poprawek, nie czasu obliczeń.
-- Przesuwanie całego wielokąta narzuca tę samą translację wszystkim jego wierzchołkom i uchwytom oraz zachowuje parametry `bulge` jego łuków. Powiązane inne wielokąty mogą się dostosować. Gdy to niemożliwe, ruch nie zostaje zatwierdzony.
+- Przy ruchu uchwytu publiczne przeciążenie `solveConstraints(ControlPointRef)` najpierw blokuje oba wierzchołki jego segmentu. Prywatna pętla usuwa te wierzchołki z niewiadomych i sprawdza przed zatwierdzeniem, że ich pozycje są dokładnie zachowane. Ta próba otrzymuje najwyżej `min(maxIterations, maxFixedEndpointIterations)` iteracji; aktualnie domyślny limit preferencji wynosi 50, a całkowity limit wynosi 10 000. Wartość 0 pomija korekty z zablokowanymi końcami. Jeśli próba nie uzyska zbieżności i pozostaje budżet iteracji, ponawiamy obliczenia od tego samego dokumentu z odblokowanymi końcami. Obie próby dzielą `maxIterations`, a wynik sumuje zaakceptowane poprawki obu prób. Uchwyt pozostaje dokładnie przypięty w obu wariantach. Niepoprawne wejście jest odrzucane bez drugiej próby; nieudane obliczenia nie zmieniają dokumentu. Ruch końców jest więc wariantem rezerwowym. Oddzielny limit preferencji zapobiega zużyciu wszystkich iteracji na trudny problem z unieruchomionymi końcami. Jest limitem liczby poprawek, nie czasu obliczeń.
+- Przesuwanie całego wielokąta narzuca tę samą translację wszystkim jego wierzchołkom i uchwytom oraz zachowuje parametry `bulge` jego łuków. Zachowane są długości, kierunki i lokalna ciągłość, a równoległości między figurami nadal obowiązują. Inne figury pozostają na miejscu; ta operacja nie uruchamia solvera.
 - Relacji nie usuwamy automatycznie w celu ułatwienia przeciągania. Osobną regułą jest konwersja odcinka na krzywą: usuwa jego ograniczenia długości i równoległości w ramach transakcji.
 
-Nie dla każdego kursora istnieje rozwiązanie: np. trójkąt o trzech ustalonych długościach nie pozwala umieścić jednego wierzchołka w dowolnym miejscu przy dowolnych dodatkowych blokadach. W takim przypadku pokazujemy niepoprawny podgląd z prowadzonym punktem pod kursorem i oznaczeniem konfliktu; dokument zachowuje ostatni poprawny stan. Zwolnienie przycisku przywraca ten stan. To jawna polityka dla sytuacji, w której nie da się jednocześnie zachować wszystkich warunków zadania.
+Nie dla każdego kursora i zestawu blokad istnieje rozwiązanie. Przy odrzuconym ruchu na scenie pozostaje ostatni poprawny podgląd z ostrzeżeniem; nie jest pokazywany niespójny kandydat pod kursorem. Zwolnienie przycisku zachowuje ten podgląd, a Esc przywraca stan sprzed całego gestu. To jawna polityka dla sytuacji, w której nie da się jednocześnie zachować wszystkich warunków zadania.
 
 ## Transakcje
 

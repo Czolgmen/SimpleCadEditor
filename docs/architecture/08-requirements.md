@@ -8,7 +8,7 @@
 - Niezależny od Windows rdzeń geometrii, solver oraz obsługa edycji.
 - Wariant **A–K**, wskazany przez użytkownika: równoległość i domyślne G1 dla Béziera.
 - Zgodnie z doprecyzowaniem użytkownika ograniczenia długości i równoległości dotyczą tylko odcinków. Béziery i łuki, w tym półokręgi, zachowują obsługę ciągłości, bez tych ograniczeń krawędzi.
-- Zakres obecnej pracy obejmuje plan architektury. Dokumenty nie oznaczają, że opisane funkcje są już wdrożone.
+- Dokumenty architektury zachowują również plany rozbudowy. Bieżący stan i rzeczywiste API opisuje [dokumentacja programu](../documentation.md); skrócona pomoc jest wbudowana w aplikację pod F1.
 
 ## Interpretacje wymagające jawnego opisania
 
@@ -23,8 +23,8 @@ Poniższe decyzje są propozycjami projektowymi dla miejsc, których specyfikacj
 | Podział łuku | Dwa odcinki przez środkowy punkt łuku | Nie powstają dwa łuki sprzeczne z regułą promienia dla G0/G0; operacja zmienia kształt |
 | Usuwanie wierzchołka | Zastąpienie dwóch sąsiednich krawędzi jednym odcinkiem | Prosty i przewidywalny model; brak arbitralnego dopasowania nowej krzywej |
 | Ciągłość po zmianie sąsiedztwa | Zachowanie jawnych ustawień ocalałych wierzchołków, ponowne rozwiązanie relacji | Zmiana topologii może zostać odrzucona, jeśli nie uzyska poprawnego wyniku |
-| Niewykonalny ruch | Punkt pod kursorem w oznaczonym niepoprawnym podglądzie, dokument zachowuje ostatni poprawny wynik | Nie można matematycznie zagwarantować dowolnego położenia i wszystkich możliwych relacji jednocześnie |
-| Przesunięcie wielokąta | Sztywna translacja wskazanego obiektu | Inne powiązane obiekty mogą się dostosować; niewykonalny ruch jest odrzucany |
+| Niewykonalny ruch | Pozostaje ostatni poprawny podgląd i ostrzeżenie; puszczenie myszy zachowuje ten podgląd, a Esc cofa cały gest | Nie można matematycznie zagwarantować dowolnego położenia i wszystkich możliwych relacji jednocześnie |
+| Przesunięcie wielokąta | Sztywna translacja wskazanego obiektu | Długości, kierunki, ciągłość i bulge pozostają zachowane; inne figury nie są przesuwane |
 | Nowe wielokąty | Dodawane czytelnie w kodzie sceny początkowej | Zgodnie z jawnym dopuszczeniem w punkcie 1 zadania, kreator UI nie jest wymagany |
 | Wnętrze przy samoprzecięciach | Reguła parzystości | Jednoznaczny wybór wnętrza do przesuwania wielokąta |
 

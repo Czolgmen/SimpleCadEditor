@@ -7,6 +7,7 @@
 #include <platform/win32/AppState.h>
 #include <platform/win32/GdiRenderer.h>
 #include <platform/win32/LengthDialog.h>
+#include <platform/win32/HelpDialog.h>
 #include <cad_core/demo/DemoScene.hpp>
 #include <editor/HitTester.h>
 
@@ -46,9 +47,11 @@ namespace
             65, 8, 70, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_GDI)), hInst, nullptr);
         HWND bresenham = CreateWindowExW(0, L"BUTTON", L"Bresenham", style,
             145, 8, 125, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_BRESENHAM)), hInst, nullptr);
-        if (!gdi || !bresenham)
+        HWND documentation = CreateWindowExW(0, L"BUTTON", L"Dokumentacja", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_PUSHBUTTON,
+            290, 8, 130, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_DOCUMENTATION)), hInst, nullptr);
+        if (!gdi || !bresenham || !documentation)
             return false;
-        for (const HWND control : {gdi, bresenham})
+        for (const HWND control : {gdi, bresenham, documentation})
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), FALSE);
         CheckRadioButton(window, IDC_LINE_GDI, IDC_LINE_BRESENHAM,
             algorithm == cad::render::LineAlgorithm::Bresenham ? IDC_LINE_BRESENHAM : IDC_LINE_GDI);
@@ -256,16 +259,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Główna pętla komunikatów:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
+        if (cad::win32::handleHelpDialogMessage(appState.helpWindow, msg) ||
+            cad::win32::handleHelpDialogMessage(appState.documentationWindow, msg))
+            continue;
         const HWND root = GetAncestor(msg.hwnd, GA_ROOT);
-        const bool fromAlgorithmControl = msg.hwnd != root &&
-            (GetDlgCtrlID(msg.hwnd) == IDC_LINE_GDI || GetDlgCtrlID(msg.hwnd) == IDC_LINE_BRESENHAM);
-        if (fromAlgorithmControl && msg.message == WM_KEYDOWN && (msg.wParam == VK_ESCAPE || msg.wParam == VK_DELETE))
+        const bool fromToolbarControl = msg.hwnd != root &&
+            (GetDlgCtrlID(msg.hwnd) == IDC_LINE_GDI || GetDlgCtrlID(msg.hwnd) == IDC_LINE_BRESENHAM ||
+                GetDlgCtrlID(msg.hwnd) == IDC_DOCUMENTATION);
+        if (fromToolbarControl && msg.message == WM_KEYDOWN &&
+            (msg.wParam == VK_ESCAPE || msg.wParam == VK_DELETE || msg.wParam == VK_F1))
         {
             SendMessageW(root, msg.message, msg.wParam, msg.lParam);
             continue;
         }
         if (!TranslateAccelerator(root, hAccelTable, &msg) &&
-            !(fromAlgorithmControl && IsDialogMessageW(root, &msg)))
+            !(fromToolbarControl && IsDialogMessageW(root, &msg)))
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -485,7 +493,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         releaseMouseCapture(hWnd);
         return 0;
     }
+    case WM_HELP:
+        SendMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDM_HELP, 0), 0);
+        return TRUE;
     case WM_KEYDOWN:
+        if (wParam == VK_F1)
+        {
+            SendMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDM_HELP, 0), 0);
+            return 0;
+        }
         if (wParam == VK_ESCAPE)
         {
             if (auto* state = getAppState(hWnd))
@@ -591,6 +607,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
         {
             const int controlId = LOWORD(wParam);
+            if (controlId == IDM_HELP || controlId == IDM_DOCUMENTATION || controlId == IDC_DOCUMENTATION)
+            {
+                if (controlId == IDC_DOCUMENTATION && (HIWORD(wParam) != BN_CLICKED ||
+                    !lParam || reinterpret_cast<HWND>(lParam) != GetDlgItem(hWnd, IDC_DOCUMENTATION)))
+                    return 0;
+                if (auto* state = getAppState(hWnd))
+                {
+                    const bool documentation = controlId != IDM_HELP;
+                    const HWND help = documentation
+                        ? cad::win32::createDocumentationDialog(hInst, hWnd, state->documentationWindow)
+                        : cad::win32::createHelpDialog(hInst, hWnd, state->helpWindow);
+                    if (!help)
+                    {
+                        MessageBoxW(hWnd, documentation ? L"Nie udało się otworzyć dokumentacji." : L"Nie udało się otworzyć pomocy.",
+                            documentation ? L"Dokumentacja" : L"Pomoc", MB_OK | MB_ICONERROR);
+                        return 0;
+                    }
+                    if (state->editor.cancelInteraction())
+                    {
+                        state->showConsistencyWarning = false;
+                        InvalidateRect(hWnd, nullptr, FALSE);
+                    }
+                    releaseMouseCapture(hWnd);
+                    ShowWindow(help, SW_SHOWNORMAL);
+                    SetForegroundWindow(help);
+                }
+                return 0;
+            }
             if (controlId == IDC_LINE_GDI || controlId == IDC_LINE_BRESENHAM)
             {
                 if (HIWORD(wParam) == BN_CLICKED && lParam &&
@@ -848,6 +892,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 GetWindowLongPtrW(hWnd, GWLP_USERDATA));
             if (state)
             {
+                if (state->helpWindow)
+                    DestroyWindow(state->helpWindow);
+                if (state->documentationWindow)
+                    DestroyWindow(state->documentationWindow);
                 state->editor.cancelInteraction();
                 state->backBuffer.reset();
             }

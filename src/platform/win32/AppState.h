@@ -15,6 +15,8 @@ namespace cad::win32
         std::optional<cad::Vec2> pendingPointerPosition;
         bool pointerTimerActive = false;
         cad::render::LineAlgorithm lineAlgorithm = cad::render::LineAlgorithm::Gdi;
+        HWND helpWindow = nullptr;
+        HWND documentationWindow = nullptr;
     };
     
 

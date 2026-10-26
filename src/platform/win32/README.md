@@ -13,6 +13,8 @@ src/platform/win32/
   GdiRenderer.cpp
   LengthDialog.h
   LengthDialog.cpp
+  HelpDialog.h
+  HelpDialog.cpp
 ```
 
 Pliki należą do projektu aplikacji `Projecr1_GK`, a nie biblioteki `cad_core`. Filtry Visual Studio odzwierciedlają tę strukturę. Katalog `src` jest dodany do ścieżek nagłówków aplikacji i IntelliSense.
@@ -36,6 +38,18 @@ Przykład dołączania nagłówka z kodu aplikacji:
 ```cpp
 #include <platform/win32/GdiRenderer.h>
 ```
+
+## Pomoc w aplikacji
+
+F1, komunikat WM_HELP i menu Pomoc → Obsługa programu przywołują jedno okno modeless. Pięć tematów opisuje sterowanie, ograniczenia, Béziery, łuki i scenę startową. Tekst jest wkompilowany, tylko do odczytu, przewijalny i możliwy do kopiowania. Okno można skalować i pozostawić otwarte podczas edycji. Pełna dokumentacja jest osobno w [docs/documentation.md](../../../docs/documentation.md).
+
+HelpDialog tworzy ukryte okno z IDD_HELP, a adapter pokazuje je i przekazuje jego komunikaty przez handleHelpDialogMessage. Ten filtr obsługuje Esc przed kontrolkami i deleguje nawigację dialogową do IsDialogMessage. AppState przechowuje HWND; WM_NCDESTROY pomocy zeruje go przez pożyczoną referencję. Referencja musi pozostać ważna do zamknięcia okna, dlatego właściciel niszczy pomoc przed końcem życia stanu aplikacji. Otwarcie pomocy anuluje aktywny gest i wybór pary, usuwa zaplanowaną próbkę myszy oraz zwalnia przechwycenie. Powtórne F1 zachowuje wybrany temat.
+
+## Pełna dokumentacja w aplikacji
+
+Przycisk Dokumentacja na pasku i menu Pomoc → Dokumentacja algorytmów... otwierają osobne okno z rozdziałami [pełnego opisu](../../../docs/documentation.md). Domyślny temat obejmuje algorytmy rysowania, a lista udostępnia także model danych, solver i pozostałe rozdziały. Pomoc F1 pozostaje niezależna. Oba okna są modeless i korzystają ze wspólnego szablonu, układu i obsługi klawiatury.
+
+Plik docs/documentation.md jest dołączony do zasobów jako IDR_DOCUMENTATION RCDATA. HelpDialog dekoduje UTF-8, wydziela rozdziały z nagłówków drugiego poziomu, pomija spis treści i zamienia użyty podzbiór Markdown na czytelny tekst. Bloki kodu i wzory są zachowane. Nie jest potrzebny zewnętrzny edytor, przeglądarka ani plik obok EXE. Każde okno posiada własną listę tematów i pożyczony wskaźnik na odpowiedni uchwyt AppState; jego stan jest zwalniany przy WM_NCDESTROY.
 
 ## Obsługa gestów
 

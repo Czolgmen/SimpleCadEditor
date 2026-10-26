@@ -7,6 +7,7 @@
 static bool failTimerAllocation = false;
 static unsigned presentRequests = 0;
 static unsigned messageBoxRequests = 0;
+static unsigned helpShowRequests = 0;
 static std::wstring lastMessageBoxText;
 static int WINAPI testMessageBoxW(HWND, LPCWSTR text, LPCWSTR, UINT)
 {
@@ -23,6 +24,15 @@ static UINT_PTR WINAPI testSetTimer(HWND window, UINT_PTR id, UINT interval, TIM
 {
     return failTimerAllocation ? 0 : ::SetTimer(window, id, interval, callback);
 }
+static BOOL WINAPI testShowWindow(HWND window, int command)
+{
+    if (command == SW_SHOWNORMAL) ++helpShowRequests;
+    return ::ShowWindow(window, SW_HIDE); // Test actual dialogs without visible windows.
+}
+static BOOL WINAPI testSetForegroundWindow(HWND)
+{
+    return TRUE;
+}
 
 // Exercise the actual window procedure, including its private timer ID. Inject
 // timer-allocation failure and record modal messages without opening dialogs.
@@ -31,10 +41,14 @@ static UINT_PTR WINAPI testSetTimer(HWND window, UINT_PTR id, UINT interval, TIM
 #define SetTimer testSetTimer
 #define UpdateWindow testUpdateWindow
 #define MessageBoxW testMessageBoxW
+#define ShowWindow testShowWindow
+#define SetForegroundWindow testSetForegroundWindow
 #include "../../Projecr1_GK.cpp"
 #undef SetTimer
 #undef UpdateWindow
 #undef MessageBoxW
+#undef ShowWindow
+#undef SetForegroundWindow
 #include "../CurveTestSupport.h"
 #include <cad_core/model/EdgeSampling.h>
 #include <cad_core/model/ContinuityJoins.h>
@@ -669,6 +683,218 @@ namespace
             "Algorithm bar clicks affected geometry");
     }
 
+    std::wstring dialogText(HWND dialog)
+    {
+        const HWND edit = GetDlgItem(dialog, IDC_HELP_TEXT);
+        const int size = GetWindowTextLengthW(edit);
+        std::wstring text(static_cast<std::size_t>(size) + 1, L'\0');
+        const int written = GetWindowTextW(edit, text.data(), size + 1);
+        text.resize(static_cast<std::size_t>(written));
+        return text;
+    }
+
+    void documentationButtonAndMenuOpenTheSameWindow()
+    {
+        Fixture f;
+        const HWND button = GetDlgItem(f.window, IDC_DOCUMENTATION);
+        require(button && (GetWindowLongPtrW(button, GWL_STYLE) & BS_TYPEMASK) == BS_PUSHBUTTON,
+            "Documentation toolbar button missing");
+        require(f.state.editor.selectAt({80, 40}, 0), "Documentation selection fixture failed");
+        const Document before = f.state.editor.document();
+        f.state.lineAlgorithm = render::LineAlgorithm::Bresenham;
+        SendMessageW(button, BM_CLICK, 0, 0);
+        const HWND documentation = f.state.documentationWindow;
+        require(documentation && IsWindow(documentation) && !f.state.helpWindow,
+            "Documentation button opened the wrong window");
+        const auto text = dialogText(documentation);
+        require(text.find(L"Bresenham") != std::wstring::npos && text.find(L"Cohena") != std::wstring::npos,
+            "Documentation did not initially show drawing algorithms");
+        SendDlgItemMessageW(documentation, IDC_HELP_TOPIC, CB_SETCURSEL, 7, 0);
+        SendMessageW(documentation, WM_COMMAND, MAKEWPARAM(IDC_HELP_TOPIC, CBN_SELCHANGE), 0);
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_DOCUMENTATION, 0), 0);
+        require(f.state.documentationWindow == documentation &&
+            SendDlgItemMessageW(documentation, IDC_HELP_TOPIC, CB_GETCURSEL, 0, 0) == 7,
+            "Documentation menu duplicated window or reset chapter");
+        requireSameCurveDocument(f.state.editor.document(), before);
+        require(f.state.editor.selection().controlPoint == f.control &&
+            f.state.lineAlgorithm == render::LineAlgorithm::Bresenham, "Documentation changed editor state");
+        const HMENU menu = LoadMenuW(hInst, MAKEINTRESOURCEW(IDC_PROJECR1GK));
+        wchar_t label[128]{};
+        require(menu != nullptr, "Documentation menu resource missing");
+        const int length = GetMenuStringW(menu, IDM_DOCUMENTATION, label, static_cast<int>(std::size(label)), MF_BYCOMMAND);
+        DestroyMenu(menu);
+        require(length > 0 && std::wstring(label).find(L"Dokumentacja") != std::wstring::npos,
+            "Documentation menu item missing");
+    }
+
+    void embeddedDocumentationHasFormattedAlgorithmsModelAndSolver()
+    {
+        Fixture f;
+        const HWND dialog = win32::createDocumentationDialog(hInst, f.window, f.state.documentationWindow);
+        require(dialog && !IsWindowVisible(dialog), "Embedded documentation could not be created hidden");
+        const LRESULT count = SendDlgItemMessageW(dialog, IDC_HELP_TOPIC, CB_GETCOUNT, 0, 0);
+        require(count == 10, "Manual chapters were lost or table of contents became a duplicate chapter");
+        for (LRESULT chapter = 0; chapter < count; ++chapter)
+        {
+            SendDlgItemMessageW(dialog, IDC_HELP_TOPIC, CB_SETCURSEL, static_cast<WPARAM>(chapter), 0);
+            SendMessageW(dialog, WM_COMMAND, MAKEWPARAM(IDC_HELP_TOPIC, CBN_SELCHANGE), 0);
+            const auto text = dialogText(dialog);
+            require(text.size() > 100 && text.find(L"```") == std::wstring::npos &&
+                text.find(L"**") == std::wstring::npos && text.find(L"](../") == std::wstring::npos,
+                "Embedded chapter is empty or still contains Markdown display markup");
+            if (chapter == 5)
+                require(text.find(L"VertexId") != std::wstring::npos && text.find(L"Document") != std::wstring::npos,
+                    "Model chapter did not load");
+            if (chapter == 6)
+                require(text.find(L"Δ1") != std::wstring::npos && text.find(L"Bresenham") != std::wstring::npos &&
+                    text.find(L"Cohena") != std::wstring::npos && text.find(L"point += Δ1") != std::wstring::npos,
+                    "Algorithm chapter lost Unicode equations or code blocks");
+            if (chapter == 7)
+                require(text.find(L"J*Jᵀ") != std::wstring::npos && text.find(L"nextafter") != std::wstring::npos &&
+                    text.find(L"maxIterations") != std::wstring::npos, "Solver chapter lost technical content");
+        }
+    }
+
+    void documentationAndHelpHaveIndependentLifetimes()
+    {
+        Fixture f;
+        SendMessageW(f.window, WM_KEYDOWN, VK_F1, 0);
+        SendMessageW(GetDlgItem(f.window, IDC_DOCUMENTATION), BM_CLICK, 0, 0);
+        const HWND help = f.state.helpWindow, documentation = f.state.documentationWindow;
+        require(help && documentation && help != documentation, "Help and documentation must be separate windows");
+        MSG escape{};
+        escape.hwnd = GetDlgItem(documentation, IDC_HELP_TEXT);
+        escape.message = WM_KEYDOWN;
+        escape.wParam = VK_ESCAPE;
+        require(!win32::handleHelpDialogMessage(help, escape) &&
+            win32::handleHelpDialogMessage(documentation, escape), "Escape was routed to the wrong reference window");
+        require(!f.state.documentationWindow && f.state.helpWindow == help && IsWindow(help),
+            "Closing documentation also closed help or retained stale handle");
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_DOCUMENTATION, 0), 0);
+        const HWND reopened = f.state.documentationWindow;
+        require(reopened && IsWindow(reopened), "Documentation did not reopen");
+        DestroyWindow(f.window);
+        f.window = nullptr;
+        require(!f.state.helpWindow && !f.state.documentationWindow && !IsWindow(help) && !IsWindow(reopened),
+            "Owner destruction did not close both reference windows");
+    }
+
+    void helpTopicsAreReadableAndResizeWithTheDialog()
+    {
+        Fixture f;
+        const HWND help = win32::createHelpDialog(hInst, f.window, f.state.helpWindow);
+        require(help && f.state.helpWindow == help && !IsWindowVisible(help), "Help creation did not return hidden owned dialog");
+        require(GetWindow(help, GW_OWNER) == f.window, "Help dialog lost its owner");
+        const HWND edit = GetDlgItem(help, IDC_HELP_TEXT);
+        require(edit && (GetWindowLongPtrW(edit, GWL_STYLE) & ES_READONLY) &&
+            (GetWindowLongPtrW(edit, GWL_STYLE) & WS_VSCROLL), "Help text must be read-only and scrollable");
+        const std::array markers{L"LPM", L"RÓWNOLEGŁOŚĆ", L"C1", L"G0", L"SCENA"};
+        require(SendDlgItemMessageW(help, IDC_HELP_TOPIC, CB_GETCOUNT, 0, 0) == static_cast<LRESULT>(markers.size()), "Help topics missing");
+        for (std::size_t i = 0; i < markers.size(); ++i)
+        {
+            SendDlgItemMessageW(help, IDC_HELP_TOPIC, CB_SETCURSEL, i, 0);
+            SendMessageW(help, WM_COMMAND, MAKEWPARAM(IDC_HELP_TOPIC, CBN_SELCHANGE),
+                reinterpret_cast<LPARAM>(GetDlgItem(help, IDC_HELP_TOPIC)));
+            wchar_t text[4096]{};
+            require(GetDlgItemTextW(help, IDC_HELP_TEXT, text, static_cast<int>(std::size(text))) > 100 &&
+                std::wstring(text).find(markers[i]) != std::wstring::npos, "Help topic text missing or garbled");
+        }
+        for (const POINT size : {POINT{420, 340}, POINT{800, 600}})
+        {
+            require(SetWindowPos(help, nullptr, 0, 0, size.x, size.y, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE),
+                "Help resize failed");
+            RECT text{}, close{}, client{};
+            require(GetWindowRect(edit, &text) && GetWindowRect(GetDlgItem(help, IDCANCEL), &close) &&
+                GetClientRect(help, &client), "Help layout unavailable");
+            MapWindowPoints(nullptr, help, reinterpret_cast<POINT*>(&text), 2);
+            MapWindowPoints(nullptr, help, reinterpret_cast<POINT*>(&close), 2);
+            require(text.left >= 0 && text.right <= client.right && text.bottom > text.top &&
+                text.bottom < close.top && close.bottom <= client.bottom, "Help controls overlap after resize");
+        }
+        MSG escape{};
+        escape.hwnd = edit;
+        escape.message = WM_KEYDOWN;
+        escape.wParam = VK_ESCAPE;
+        MSG canvasEscape = escape;
+        canvasEscape.hwnd = f.window;
+        require(!win32::handleHelpDialogMessage(help, canvasEscape) && IsWindow(help),
+            "Help consumed Escape belonging to the canvas");
+        const bool handled = win32::handleHelpDialogMessage(help, escape);
+        require(handled && !f.state.helpWindow && !IsWindow(help),
+            "Escape did not close modeless help: handled=" + std::to_string(handled) +
+            ", alive=" + std::to_string(IsWindow(help)) + ", slot=" + std::to_string(f.state.helpWindow != nullptr));
+    }
+
+    void helpEntryPointsReuseWindowAndPreserveDocument()
+    {
+        Fixture f;
+        require(f.state.editor.selectAt({80, 40}, 0), "Help selection fixture failed");
+        const Document before = f.state.editor.document();
+        const auto selection = f.state.editor.selection().controlPoint;
+        f.state.lineAlgorithm = render::LineAlgorithm::Bresenham;
+        const unsigned shown = helpShowRequests;
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_HELP, 0), 0);
+        const HWND help = f.state.helpWindow;
+        require(help && IsWindow(help), "Help menu command did not open dialog");
+        SendDlgItemMessageW(help, IDC_HELP_TOPIC, CB_SETCURSEL, 2, 0);
+        SendMessageW(help, WM_COMMAND, MAKEWPARAM(IDC_HELP_TOPIC, CBN_SELCHANGE), 0);
+        SendMessageW(f.window, WM_KEYDOWN, VK_F1, 0);
+        SendMessageW(f.window, WM_HELP, 0, 0);
+        require(f.state.helpWindow == help && helpShowRequests == shown + 3 &&
+            SendDlgItemMessageW(help, IDC_HELP_TOPIC, CB_GETCURSEL, 0, 0) == 2,
+            "F1/help request duplicated window or reset selected topic");
+        requireSameCurveDocument(f.state.editor.document(), before);
+        require(f.state.editor.selection().controlPoint == selection &&
+            f.state.lineAlgorithm == render::LineAlgorithm::Bresenham, "Help changed document view or selection");
+        SendMessageW(help, WM_CLOSE, 0, 0);
+        require(!f.state.helpWindow && !IsWindow(help), "Help close retained stale handle");
+        SendMessageW(f.window, WM_KEYDOWN, VK_F1, 0);
+        require(f.state.helpWindow && IsWindow(f.state.helpWindow), "Help could not reopen");
+        const HWND reopened = f.state.helpWindow;
+        DestroyWindow(f.window);
+        f.window = nullptr;
+        require(!IsWindow(reopened) && !f.state.helpWindow, "Owner destruction left help window or stale slot");
+    }
+
+    void helpCancelsPendingGestureAndParallelSelection()
+    {
+        Fixture f;
+        const Document before = f.state.editor.document();
+        f.begin();
+        f.move({100, 50});
+        f.tick();
+        f.move({120, 60});
+        SendMessageW(f.window, WM_KEYDOWN, VK_F1, 0);
+        f.requireStopped();
+        requireSameCurveDocument(f.state.editor.document(), before);
+        const auto edge = f.state.editor.document().getPolygons().begin()->second.edges[1];
+        require(f.state.editor.selectAt(edgeMiddle(before, edge), 0) && f.state.editor.beginParallelSelection(),
+            "Help parallel cancellation fixture failed");
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_HELP, 0), 0);
+        require(!f.state.editor.pendingParallelEdge(), "Help retained half-completed parallel selection");
+        requireSameCurveDocument(f.state.editor.document(), before);
+    }
+
+    void helpMenuAndF1AcceleratorAreEmbeddedResources()
+    {
+        const HMENU menu = LoadMenuW(hInst, MAKEINTRESOURCEW(IDC_PROJECR1GK));
+        require(menu != nullptr, "Application menu resource unavailable");
+        wchar_t label[128]{};
+        const int length = GetMenuStringW(menu, IDM_HELP, label, static_cast<int>(std::size(label)), MF_BYCOMMAND);
+        DestroyMenu(menu);
+        require(length > 0 && std::wstring(label).find(L"F1") != std::wstring::npos, "Help menu entry missing");
+        const HACCEL table = LoadAcceleratorsW(hInst, MAKEINTRESOURCEW(IDC_PROJECR1GK));
+        require(table != nullptr, "Accelerator resource unavailable");
+        const int count = CopyAcceleratorTableW(table, nullptr, 0);
+        require(count > 0, "Empty accelerator table");
+        std::vector<ACCEL> accelerators(static_cast<std::size_t>(count));
+        require(CopyAcceleratorTableW(table, accelerators.data(), count) == count, "Could not inspect accelerators");
+        require(std::any_of(accelerators.begin(), accelerators.end(), [](const ACCEL& item)
+        {
+            return item.cmd == IDM_HELP && item.key == VK_F1 && (item.fVirt & FVIRTKEY) != 0;
+        }), "F1 accelerator is not bound to Help");
+    }
+
     void timerFailureKeepsImmediateDraggingFunctional()
     {
         Fixture f;
@@ -694,6 +920,13 @@ int main()
     if (!RegisterClassW(&klass))
         return 1;
     const std::array tests{
+        cad::tests::TestCase{"documentation button and menu open the same window", documentationButtonAndMenuOpenTheSameWindow},
+        cad::tests::TestCase{"embedded documentation has formatted algorithms model and solver", embeddedDocumentationHasFormattedAlgorithmsModelAndSolver},
+        cad::tests::TestCase{"documentation and help have independent lifetimes", documentationAndHelpHaveIndependentLifetimes},
+        cad::tests::TestCase{"help topics are readable and resize with dialog", helpTopicsAreReadableAndResizeWithTheDialog},
+        cad::tests::TestCase{"help entry points reuse window and preserve document", helpEntryPointsReuseWindowAndPreserveDocument},
+        cad::tests::TestCase{"help cancels pending gesture and parallel selection", helpCancelsPendingGestureAndParallelSelection},
+        cad::tests::TestCase{"help menu and F1 accelerator are embedded resources", helpMenuAndF1AcceleratorAreEmbeddedResources},
         cad::tests::TestCase{"radio controls switch only the view", radioControlsSwitchOnlyTheView},
         cad::tests::TestCase{"renderer dispatches segments Bezier and arcs", rendererDispatchesSegmentsBezierAndArcs},
         cad::tests::TestCase{"renderer preserves widths and falls back to GDI", rendererPreservesWidthsAndFallsBackToGdi},

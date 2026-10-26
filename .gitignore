@@ -2,6 +2,20 @@
 /docs/instruction.md
 /docs/instuction.md
 
+# Machine-specific VS Code configuration; portable templates stay versioned.
+/.vscode/c_cpp_properties.json
+/.vscode/*.local.json
+
+# One-off audit reports and scratch/output directories
+/docs/function-usage.md
+/docs/function-usage.csv
+/.tmp/
+/tmp/
+/artifacts/
+*.log
+*.tmp
+*.bak
+
 # Visual Studio local settings and caches
 .vs/
 *.suo
@@ -44,3 +58,6 @@ ARM64/
 *.tlog
 *.lastbuildstate
 *.VC.VC.opendb
+
+# The ready-to-run release is intentionally versioned; other EXEs stay ignored.
+!/dist/windows-x64/Projecr1_GK.exe

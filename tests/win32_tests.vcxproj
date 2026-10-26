@@ -42,7 +42,7 @@
     <ClCompile><RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
-    <ClCompile><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions><Optimization>MaxSpeed</Optimization></ClCompile>
+    <ClCompile><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions><Optimization>MaxSpeed</Optimization></ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="platform\PointerPreviewTests.cpp" />
@@ -55,6 +55,10 @@
     <ClCompile Include="..\src\render\LineClipping.cpp" />
     <ClCompile Include="..\src\platform\win32\GdiRenderer.cpp" />
     <ClCompile Include="..\src\platform\win32\LengthDialog.cpp" />
+    <ClCompile Include="..\src\platform\win32\HelpDialog.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\Projecr1_GK.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\cad_core\cad_core.vcxproj"><Project>{29a25e31-693f-48be-b2a3-e95556476d83}</Project></ProjectReference>

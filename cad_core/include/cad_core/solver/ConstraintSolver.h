@@ -18,12 +18,12 @@ namespace cad::solver
     struct SolveOptions
     {
         double lengthTolerance = 1e-6; // World units.
-        unsigned maxIterations = 100;
+        unsigned maxIterations = 10000;
         double parallelTolerance = 1e-6; // Absolute normalized cross product (sin of the angle).
         double g1Tolerance = 1e-6;
         double c1Tolerance = 1e-6;
         // Part of maxIterations, not an additional budget. Zero skips endpoint preference.
-        unsigned maxFixedEndpointIterations = 8;
+        unsigned maxFixedEndpointIterations = 50;
     };
 
     struct SolveResult{

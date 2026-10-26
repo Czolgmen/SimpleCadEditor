@@ -81,6 +81,9 @@
     <ClInclude Include="src\platform\win32\LengthDialog.h">
       <Filter>src\platform\win32</Filter>
     </ClInclude>
+    <ClInclude Include="src\platform\win32\HelpDialog.h">
+      <Filter>src\platform\win32</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\editor\HitTester.cpp">
@@ -111,6 +114,9 @@
       <Filter>src\platform\win32</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\win32\LengthDialog.cpp">
+      <Filter>src\platform\win32</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\win32\HelpDialog.cpp">
       <Filter>src\platform\win32</Filter>
     </ClCompile>
   </ItemGroup>

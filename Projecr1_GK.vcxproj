@@ -94,6 +94,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -128,6 +129,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -162,6 +164,7 @@
     <ClInclude Include="src\platform\win32\DibRenderer.h" />
     <ClInclude Include="src\platform\win32\GdiRenderer.h" />
     <ClInclude Include="src\platform\win32\LengthDialog.h" />
+    <ClInclude Include="src\platform\win32\HelpDialog.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Projecr1_GK.cpp" />
@@ -174,6 +177,7 @@
     <ClCompile Include="src\platform\win32\DibRenderer.cpp" />
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp" />
     <ClCompile Include="src\platform\win32\LengthDialog.cpp" />
+    <ClCompile Include="src\platform\win32\HelpDialog.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\platform\win32\README.md" />
