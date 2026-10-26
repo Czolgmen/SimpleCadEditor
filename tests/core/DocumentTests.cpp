@@ -2,6 +2,10 @@
 #include <cad_core/demo/DemoScene.hpp>
 
 #include "../TestSupport.h"
+#include "../CurveTestSupport.h"
+#include <cad_core/constraints/ContinuityConstraint.h>
+#include <cad_core/model/EdgeSampling.h>
+#include <editor/EditorSession.h>
 
 #include <array>
 #include <limits>
@@ -644,6 +648,165 @@ namespace
         require(first.validate().empty() && second.validate().empty(),
             "Independent demo documents must remain valid");
     }
+
+    void requireDemoRelations(const Document& document)
+    {
+        const solver::SolveOptions options;
+        require(document.validate().empty(), "Demo editing invalidated document");
+        for (const auto& relation : document.getFixedLengthConstraints())
+        {
+            const auto error = constraint::fixedLengthError(document, relation);
+            require(error && std::abs(*error) <= options.lengthTolerance, "Demo has unsatisfied length");
+        }
+        for (const auto& relation : document.getParallelConstraints())
+        {
+            const auto error = constraint::parallelError(document, relation);
+            require(error && std::abs(*error) <= options.parallelTolerance, "Demo has unsatisfied parallelism");
+        }
+        const auto joins = collectContinuityJoins(document);
+        require(joins.has_value(), "Demo continuity topology invalid");
+        for (const auto& join : *joins)
+        {
+            const auto errors = constraint::continuityErrors(document, join);
+            require(errors.has_value(), "Demo has unusable tangent");
+            const double tolerance = join.continuity == Continuity::G1 ? options.g1Tolerance : options.c1Tolerance;
+            for (const double error : *errors)
+                require(std::isfinite(error) && std::abs(error) <= tolerance, "Demo has unsatisfied continuity");
+        }
+    }
+
+    void demoContainsCurvesAndCrossPolygonRelations()
+    {
+        const Document scene = createDemoScene();
+        bool bezier = false, defaultG1 = false, c1 = false, arcG1 = false, semicircle = false;
+        std::map<EdgeId, PolygonId> owners;
+        for (const auto& [id, polygon] : scene.getPolygons())
+        {
+            for (const auto vertexId : polygon.vertices)
+            {
+                const auto setting = scene.findVertex(vertexId)->continuity;
+                defaultG1 |= setting.value == Continuity::G1 && setting.source == ContinuitySource::Default;
+                c1 |= setting.value == Continuity::C1 && setting.source == ContinuitySource::Explicit;
+            }
+            for (const auto edgeId : polygon.edges)
+            {
+                owners.emplace(edgeId, id);
+                const auto* edge = scene.findEdge(edgeId);
+                const auto* start = scene.findVertex(edge->start);
+                const auto* end = scene.findVertex(edge->end);
+                if (std::holds_alternative<CubicBezier>(edge->geometry))
+                {
+                    const auto points = sampleEdge(edge->geometry, start->position, end->position, 2);
+                    bezier |= std::abs(cross(points[1] - start->position, end->position - start->position)) > 1;
+                }
+                if (const auto* arc = std::get_if<CircularArc>(&edge->geometry))
+                {
+                    arcG1 |= (start->continuity.value == Continuity::G1) != (end->continuity.value == Continuity::G1);
+                    semicircle |= start->continuity.value == Continuity::G0 &&
+                        end->continuity.value == Continuity::G0 && std::abs(arc->bulge) == 1;
+                }
+            }
+        }
+        require(bezier && defaultG1 && c1 && arcG1 && semicircle, "Demo lost its curve/continuity examples");
+        require(!scene.getFixedLengthConstraints().empty() && !scene.getParallelConstraints().empty(),
+            "Demo must contain both edge constraint types");
+        bool multipleRelations = false;
+        for (const auto& pair : scene.getParallelConstraints())
+        {
+            require(owners.at(pair.first) != owners.at(pair.second), "Demo parallel pair must connect different figures");
+            for (const auto& length : scene.getFixedLengthConstraints())
+                multipleRelations |= length.edge == pair.first || length.edge == pair.second;
+        }
+        require(multipleRelations, "Demo must show several relations on one edge");
+    }
+
+    void demoIsSolvedAtStartupWithoutCoordinateCorrections()
+    {
+        Document scene = createDemoScene();
+        requireDemoRelations(scene);
+        const Document before = scene;
+        solver::SolveOptions options;
+        options.maxIterations = 0;
+        const auto result = solver::solveConstraints(scene, scene.getFixedLengthConstraints(),
+            scene.getParallelConstraints(), scene.getPolygons().begin()->second.vertices.front(), options);
+        require(result.status == solver::SolveStatus::Converged && result.iterations == 0,
+            "Demo requires numeric repair after construction");
+        cad::tests::requireSameCurveDocument(scene, before);
+    }
+
+    void demoCurvesAndHandlesFitInitialCanvas()
+    {
+        const Document scene = createDemoScene();
+        const auto visible = [](Vec2 point)
+        {
+            // 640x420 client area, 40px toolbar, 20px world origin margin.
+            require(std::isfinite(point.x) && std::isfinite(point.y) &&
+                point.x >= 20 && point.x <= 580 && point.y >= 20 && point.y <= 320,
+                "Demo point or handle starts outside the initial presentation area");
+        };
+        for (const auto& [id, polygon] : scene.getPolygons())
+            for (const auto edgeId : polygon.edges)
+            {
+                const auto* edge = scene.findEdge(edgeId);
+                for (const auto point : sampleEdge(edge->geometry,
+                    scene.findVertex(edge->start)->position, scene.findVertex(edge->end)->position))
+                    visible(point);
+                if (const auto* curve = std::get_if<CubicBezier>(&edge->geometry))
+                {
+                    visible(curve->control1);
+                    visible(curve->control2);
+                }
+            }
+    }
+
+    void demoControlPointsCanBeDraggedAndCancelled()
+    {
+        const Document scene = createDemoScene();
+        for (const auto& [id, polygon] : scene.getPolygons())
+            for (const auto edgeId : polygon.edges)
+                if (const auto* curve = std::get_if<CubicBezier>(&scene.findEdge(edgeId)->geometry))
+                    for (const auto which : {BezierControlPoint::First, BezierControlPoint::Second})
+                    {
+                        editor::EditorSession session{scene};
+                        const ControlPointRef control{edgeId, which};
+                        const Vec2 position = which == BezierControlPoint::First ? curve->control1 : curve->control2;
+                        const Vec2 target = position + Vec2{8, 6};
+                        require(session.pointerDown(position, 0) && session.selection().controlPoint == control,
+                            "Demo handle is not accessible for dragging");
+                        require(session.pointerMove(target), "Demo handle drag could not solve combined relations");
+                        cad::tests::requireSameCurvePoint(cad::tests::curveHandlePosition(session.document(), control), target);
+                        requireDemoRelations(session.document());
+                        require(session.cancelInteraction(), "Demo handle gesture could not be cancelled");
+                        cad::tests::requireSameCurveDocument(session.document(), scene);
+                    }
+    }
+
+    void demoArcVerticesCanBeDraggedAndCancelled()
+    {
+        const Document scene = createDemoScene();
+        std::set<VertexId> endpoints;
+        for (const auto& [id, polygon] : scene.getPolygons())
+            for (const auto edgeId : polygon.edges)
+                if (const auto* edge = scene.findEdge(edgeId); std::holds_alternative<CircularArc>(edge->geometry))
+                {
+                    endpoints.insert(edge->start);
+                    endpoints.insert(edge->end);
+                }
+        require(!endpoints.empty(), "Demo arc drag has no endpoints");
+        for (const auto vertexId : endpoints)
+        {
+            editor::EditorSession session{scene};
+            const Vec2 position = scene.findVertex(vertexId)->position;
+            const Vec2 target = position + Vec2{6, -4};
+            require(session.pointerDown(position, 0) && session.selection().vertex == vertexId,
+                "Demo arc endpoint is not accessible for dragging");
+            require(session.pointerMove(target), "Demo arc endpoint drag failed");
+            cad::tests::requireSameCurvePoint(session.document().findVertex(vertexId)->position, target);
+            requireDemoRelations(session.document());
+            require(session.cancelInteraction(), "Demo arc gesture could not be cancelled");
+            cad::tests::requireSameCurveDocument(session.document(), scene);
+        }
+    }
 }
 
 namespace cad::tests
@@ -683,6 +846,11 @@ namespace cad::tests
             TestCase{"missing last vertex causes no partial polygon move", missingPolygonVertexDoesNotPartiallyMoveVertices},
             TestCase{"demo scene is valid and traversable", demoSceneIsValidAndTraversable},
             TestCase{"demo scenes own independent documents", demoScenesAreIndependent},
+            TestCase{"demo contains curves and cross-polygon relations", demoContainsCurvesAndCrossPolygonRelations},
+            TestCase{"demo is solved at startup without coordinate corrections", demoIsSolvedAtStartupWithoutCoordinateCorrections},
+            TestCase{"demo curves and handles fit initial canvas", demoCurvesAndHandlesFitInitialCanvas},
+            TestCase{"demo control points can be dragged and cancelled", demoControlPointsCanBeDraggedAndCancelled},
+            TestCase{"demo arc vertices can be dragged and cancelled", demoArcVerticesCanBeDraggedAndCancelled},
             TestCase{"fixed length removal preserves geometry and permits readding", removesOnlyFixedLengthAndAllowsReadding},
             TestCase{"first, middle and last fixed length removal preserves other polygons' constraints", removesFirstMiddleAndLastFixedLengthPreservingOthers},
             TestCase{"absent fixed length removal preserves storage", absentFixedLengthRemovalPreservesStorage}
