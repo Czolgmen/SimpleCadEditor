@@ -320,6 +320,18 @@ namespace cad {
             secondGeometry = CubicBezier{split.right[1], split.right[2]};
             midpointContinuity = {Continuity::G1, ContinuitySource::Default};
         }
+        else if (const auto* arc = std::get_if<CircularArc>(&edgeIt->second.geometry))
+        {
+            try
+            {
+                midpoint = sampleArc(start, end, arc->bulge, 2)[1];
+            }
+            catch (const std::invalid_argument&)
+            {
+                return std::nullopt;
+            }
+            midpointContinuity = {Continuity::G0, ContinuitySource::Default};
+        }
         else
         {
             // std::midpoint avoids overflow when adding large finite coordinates.

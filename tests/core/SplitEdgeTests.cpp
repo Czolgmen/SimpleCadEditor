@@ -1,5 +1,6 @@
 #include <cad_core/model/Document.h>
 #include <cad_core/geometry/Bezier.h>
+#include <cad_core/geometry/Arc.h>
 
 #include "../TestSupport.h"
 #include "../CurveTestSupport.h"
@@ -94,13 +95,17 @@ namespace
         const Polygon original = *document.findPolygon(id);
         const EdgeId originalEdgeId = original.edges.at(index);
         const Edge originalEdge = *document.findEdge(originalEdgeId);
+        const bool arc = std::holds_alternative<CircularArc>(originalEdge.geometry);
         const auto result = document.splitEdge(originalEdgeId);
         require(result.has_value() && result->value != 0, "Split did not return a valid vertex ID");
         require(std::find(original.vertices.begin(), original.vertices.end(), *result) == original.vertices.end(),
             "Split reused an existing vertex ID");
         const Vertex* added = document.findVertex(*result);
-        require(added && added->id == *result &&
-                added->position.x == midpoint.x && added->position.y == midpoint.y,
+        const double midpointScale = (std::max)({1.0, std::abs(midpoint.x), std::abs(midpoint.y)});
+        const bool correctMidpoint = added && (arc
+            ? std::hypot(added->position.x - midpoint.x, added->position.y - midpoint.y) <= 1e-12 * midpointScale
+            : added->position == midpoint);
+        require(added && added->id == *result && correctMidpoint,
             "Split created an incorrect midpoint");
 
         const Polygon* polygon = document.findPolygon(id);
@@ -124,8 +129,9 @@ namespace
                 second->start == *result && second->end == originalEdge.end,
             "Split halves have incorrect endpoints");
         const bool curved = std::holds_alternative<CubicBezier>(originalEdge.geometry);
-        require(first->geometry.index() == originalEdge.geometry.index() &&
-            second->geometry.index() == originalEdge.geometry.index(), "Split changed the geometry type");
+        const std::size_t expectedGeometry = arc ? EdgeGeometry{LineSegment{}}.index() : originalEdge.geometry.index();
+        require(first->geometry.index() == expectedGeometry && second->geometry.index() == expectedGeometry,
+            "Split assigned the wrong geometry type");
         require(added->continuity == ContinuitySetting{curved ? Continuity::G1 : Continuity::G0,
             ContinuitySource::Default}, "Split assigned incorrect midpoint continuity");
 
@@ -464,6 +470,93 @@ namespace
         }
     }
 
+    void arcsSplitThroughCurveMidpointAtEveryCyclePosition()
+    {
+        for (std::size_t index = 0; index < 4; ++index)
+        for (const double bulge : {-8.0, -2.0, -1.0, -0.5, -0.125, 0.125, 0.5, 1.0, 2.0, 8.0})
+        {
+            cad::tests::CurveTestScene scene;
+            const EdgeId id = scene.first.edges[index];
+            require(scene.document.convertEdgeToArc(id), "Arc split fixture conversion failed");
+            const auto* edge = scene.document.findEdge(id);
+            if (std::abs(bulge) != 1)
+                require(scene.document.setContinuity(edge->end, Continuity::G1), "Arc split G1 fixture failed");
+            require(scene.document.setArcBulge(id, bulge), "Arc split bulge fixture failed");
+            const Vec2 start = scene.document.findVertex(edge->start)->position;
+            const Vec2 end = scene.document.findVertex(edge->end)->position;
+            const Vec2 chord = end - start;
+            // Independent sagitta identity, without sampling or computing circle angles.
+            const Vec2 midpoint = (start + end) * 0.5 + Vec2{chord.y, -chord.x} * (0.5 * bulge);
+            const auto added = checkSplit(scene.document, scene.first.id, index, midpoint);
+            const auto* vertex = scene.document.findVertex(added);
+            require(vertex->continuity == ContinuitySetting{Continuity::G0, ContinuitySource::Default},
+                "Arc split did not assign G0/Default");
+        }
+    }
+
+    void requireRejectedArcSplit(Document& document, EdgeId id)
+    {
+        const Document before = document;
+        require(!document.splitEdge(id), "Invalid arc split accepted");
+        cad::tests::requireSameCurveDocument(document, before);
+        Document actualProbe = document, expectedProbe = before;
+        const auto points = triangle();
+        require(actualProbe.addPolygon(points) == expectedProbe.addPolygon(points), "Rejected arc split consumed polygon ID");
+        cad::tests::requireSameCurveDocument(actualProbe, expectedProbe);
+    }
+
+    void invalidArcParametersRejectWithoutMutationOrConsumedIds()
+    {
+        for (const double bulge : {0.0, -0.0, std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::denorm_min(), -std::numeric_limits<double>::denorm_min(),
+            std::numeric_limits<double>::max(), -std::numeric_limits<double>::max()})
+        {
+            cad::tests::CurveTestScene scene;
+            const EdgeId id = scene.first.edges[1];
+            // Keep relation sentinels on the malformed fixture: rejection must
+            // happen before the normal split's relation cleanup.
+            const_cast<Edge*>(scene.document.findEdge(id))->geometry = CircularArc{bulge};
+            requireRejectedArcSplit(scene.document, id);
+        }
+    }
+
+    void nonfiniteArcSamplesRejectWithRepresentableCircle()
+    {
+        cad::tests::CurveTestScene scene;
+        const EdgeId id = scene.first.edges[0];
+        const auto* edge = scene.document.findEdge(id);
+        const double maximum = std::numeric_limits<double>::max();
+        const Vec2 start{-maximum * 0.75, maximum * 0.75}, end{maximum * 0.75, maximum * 0.75};
+        const_cast<Vertex*>(scene.document.findVertex(edge->start))->position = start;
+        const_cast<Vertex*>(scene.document.findVertex(edge->end))->position = end;
+        const_cast<Edge*>(edge)->geometry = CircularArc{-1};
+        require(computeArcParameters(start, end, -1).has_value(), "Sample-overflow fixture circle invalid");
+        requireRejectedArcSplit(scene.document, id);
+    }
+
+    void invalidArcEndpointsRejectWithoutMutation()
+    {
+        for (int coordinate = 0; coordinate < 4; ++coordinate)
+        for (const double bad : {std::numeric_limits<double>::quiet_NaN(),
+            std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()})
+        {
+            cad::tests::CurveTestScene scene;
+            const EdgeId id = scene.first.edges[0];
+            auto* edge = const_cast<Edge*>(scene.document.findEdge(id));
+            edge->geometry = CircularArc{};
+            auto& position = const_cast<Vertex*>(scene.document.findVertex(coordinate < 2 ? edge->start : edge->end))->position;
+            (coordinate % 2 == 0 ? position.x : position.y) = bad;
+            requireRejectedArcSplit(scene.document, id);
+        }
+        cad::tests::CurveTestScene scene;
+        const EdgeId id = scene.first.edges[0];
+        auto* edge = const_cast<Edge*>(scene.document.findEdge(id));
+        edge->geometry = CircularArc{};
+        const_cast<Vertex*>(scene.document.findVertex(edge->end))->position = scene.document.findVertex(edge->start)->position;
+        requireRejectedArcSplit(scene.document, id);
+    }
+
     void unconstrainedSplitPreservesAllExistingLengths()
     {
         const std::array midpoints{Vec2{5, 0}, Vec2{5, 5}, Vec2{0, 5}};
@@ -500,7 +593,11 @@ namespace cad::tests
             TestCase{"Bezier splits at every cycle position preserve shape and other geometry", splitsBezierAtEveryCyclePositionWithoutChangingOtherGeometry},
             TestCase{"repeated Bezier splits preserve all four quarters", repeatedBezierSplitsPreserveAllFourQuarters},
             TestCase{"invalid Bezier controls reject without mutation or consumed IDs", invalidBezierControlsRejectWithoutMutationOrConsumedIds},
-            TestCase{"closed constant and extreme Beziers split correctly", splitsClosedConstantAndExtremeBeziers}
+            TestCase{"closed constant and extreme Beziers split correctly", splitsClosedConstantAndExtremeBeziers},
+            TestCase{"arcs split through curve midpoint at every cycle position", arcsSplitThroughCurveMidpointAtEveryCyclePosition},
+            TestCase{"invalid arc parameters reject without mutation or consumed IDs", invalidArcParametersRejectWithoutMutationOrConsumedIds},
+            TestCase{"nonfinite arc samples reject with representable circle", nonfiniteArcSamplesRejectWithRepresentableCircle},
+            TestCase{"invalid arc endpoints reject without mutation", invalidArcEndpointsRejectWithoutMutation}
         };
         return tests;
     }

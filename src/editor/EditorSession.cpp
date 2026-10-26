@@ -204,7 +204,8 @@ namespace cad::editor
         const auto* edge = document_.findEdge(*selection_.edge);
         return edge &&
             (std::holds_alternative<LineSegment>(edge->geometry) ||
-             std::holds_alternative<CubicBezier>(edge->geometry));
+             std::holds_alternative<CubicBezier>(edge->geometry) || 
+             std::holds_alternative<CircularArc>(edge->geometry));
     }
 
     bool EditorSession::canDeleteSelectedVertex() const
