@@ -16,6 +16,9 @@
     <Filter Include="editor">
       <UniqueIdentifier>{4EA6F279-74B3-4498-9CB8-CF2B390FEE02}</UniqueIdentifier>
     </Filter>
+    <Filter Include="render">
+      <UniqueIdentifier>{A8732E50-1A24-4E5A-83BC-8AB04F31D729}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TestsMain.cpp" />
@@ -100,6 +103,18 @@
     <ClCompile Include="geometry\ArcTests.cpp">
       <Filter>geometry</Filter>
     </ClCompile>
+    <ClCompile Include="render\BresenhamTests.cpp">
+      <Filter>render</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\render\Bresenham.cpp">
+      <Filter>render</Filter>
+    </ClCompile>
+    <ClCompile Include="render\LineClippingTests.cpp">
+      <Filter>render</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\render\LineClipping.cpp">
+      <Filter>render</Filter>
+    </ClCompile>
     <ClCompile Include="editor\HitTesterTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
@@ -113,6 +128,9 @@
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\EditorSessionTests.cpp">
+      <Filter>editor</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\ArcSplitTests.cpp">
       <Filter>editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\EditorParallelTests.cpp">
@@ -134,6 +152,12 @@
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
     <ClInclude Include="CurveTestSupport.h" />
+    <ClInclude Include="..\src\render\Bresenham.h">
+      <Filter>render</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\render\LineClipping.h">
+      <Filter>render</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\editor\HitTester.h">
       <Filter>editor</Filter>
     </ClInclude>

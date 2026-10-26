@@ -7,6 +7,9 @@
     <Filter Include="src\editor">
       <UniqueIdentifier>{E4D0671A-8EA6-47AF-A8EA-5CACDBEA46EA}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\render">
+      <UniqueIdentifier>{1D4B5507-6EA4-4688-A93C-9F3ED97AFB31}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\platform">
       <UniqueIdentifier>{D6CF7455-F1BE-464B-928A-FAFA0994819D}</UniqueIdentifier>
     </Filter>
@@ -42,6 +45,15 @@
     <ClInclude Include="src\editor\Selection.h">
       <Filter>src\editor</Filter>
     </ClInclude>
+    <ClInclude Include="src\render\Bresenham.h">
+      <Filter>src\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\LineClipping.h">
+      <Filter>src\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\LineAlgorithm.h">
+      <Filter>src\render</Filter>
+    </ClInclude>
     <ClInclude Include="framework.h">
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
@@ -58,6 +70,9 @@
       <Filter>src\platform\win32</Filter>
     </ClInclude>
     <ClInclude Include="src\platform\win32\BackBuffer.h">
+      <Filter>src\platform\win32</Filter>
+    </ClInclude>
+    <ClInclude Include="src\platform\win32\DibRenderer.h">
       <Filter>src\platform\win32</Filter>
     </ClInclude>
     <ClInclude Include="src\platform\win32\GdiRenderer.h">
@@ -77,10 +92,19 @@
     <ClCompile Include="src\editor\LengthInput.cpp">
       <Filter>src\editor</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\Bresenham.cpp">
+      <Filter>src\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\LineClipping.cpp">
+      <Filter>src\render</Filter>
+    </ClCompile>
     <ClCompile Include="Projecr1_GK.cpp">
       <Filter>Pliki źródłowe</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\win32\BackBuffer.cpp">
+      <Filter>src\platform\win32</Filter>
+    </ClCompile>
+    <ClCompile Include="src\platform\win32\DibRenderer.cpp">
       <Filter>src\platform\win32</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp">

@@ -55,6 +55,7 @@ namespace cad::win32
         dc_ = replacementDc;
         bitmap_ = replacementBitmap;
         previousBitmap_ = previousBitmap;
+        pixels_ = static_cast<std::uint32_t*>(pixels);
         width_ = width;
         height_ = height;
         return true;
@@ -71,6 +72,7 @@ namespace cad::win32
 
         dc_ = nullptr;
         bitmap_ = nullptr;
+        pixels_ = nullptr;
         previousBitmap_ = nullptr;
         width_ = 0;
         height_ = 0;
@@ -87,5 +89,17 @@ namespace cad::win32
             return false;
 
         return BitBlt(destinationDc, 0, 0, width_, height_, dc_, 0, 0, SRCCOPY) != FALSE;
+    }
+    std::uint32_t *BackBuffer::pixels() noexcept
+    {
+        return pixels_;
+    }
+    int BackBuffer::width() const noexcept
+    {
+        return width_;
+    }
+    int BackBuffer::height() const noexcept
+    {
+        return height_;
     }
 }

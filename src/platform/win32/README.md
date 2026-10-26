@@ -1,12 +1,14 @@
 # Warstwa WinAPI/GDI
 
-PPM na krawędzi otwiera polecenia „Zamień na Béziera”, „Zamień na łuk okręgu” i „Zamień na odcinek”; bieżący typ jest nieaktywny. Shift+F10 korzysta z aktualnego zaznaczenia. Nowy łuk przy G0/G0 jest dodatnim półokręgiem. Przy pojedynczym G1 dopasowuje się do sąsiada. Konwersja zachowuje ustawienia ciągłości i odrzuca C1 lub G1 na obu końcach z komunikatem. Aby zmienić takie ustawienia, użyj menu ciągłości przy wierzchołku przed ponowieniem konwersji. Relacje długości i równoległości konwertowanej krawędzi są usuwane po udanej operacji; powrót do odcinka ich nie przywraca. Łuk korzysta ze wspólnego próbkowania przy rysowaniu i trafianiu. Podział łuku pozostaje nieaktywny do wdrożenia obsługi tej zmiany topologii.
+PPM na krawędzi otwiera polecenia „Zamień na Béziera”, „Zamień na łuk okręgu” i „Zamień na odcinek”; bieżący typ jest nieaktywny. Shift+F10 korzysta z aktualnego zaznaczenia. Nowy łuk przy G0/G0 jest dodatnim półokręgiem. Przy pojedynczym G1 dopasowuje się do sąsiada. Konwersja zachowuje ustawienia ciągłości i odrzuca C1 lub G1 na obu końcach z komunikatem. Aby zmienić takie ustawienia, użyj menu ciągłości przy wierzchołku przed ponowieniem konwersji. Relacje długości i równoległości konwertowanej krawędzi są usuwane po udanej operacji; powrót do odcinka ich nie przywraca. Łuk korzysta ze wspólnego próbkowania przy rysowaniu i trafianiu. Polecenie Podziel krawędź jest aktywne także dla łuku: zastępuje go dwoma odcinkami przez środkowy punkt krzywej, nadaje nowemu punktowi G0/Default i zaznacza go. Kształt łuku się zmienia; pozostałe G1 są dopasowywane przed zatwierdzeniem. Nieudany podział zachowuje dotychczasowy dokument i zaznaczenie.
 
 ```text
 src/platform/win32/
   AppState.h
   BackBuffer.h
   BackBuffer.cpp
+  DibRenderer.h
+  DibRenderer.cpp
   GdiRenderer.h
   GdiRenderer.cpp
   LengthDialog.h
@@ -15,10 +17,17 @@ src/platform/win32/
 
 Pliki należą do projektu aplikacji `Projecr1_GK`, a nie biblioteki `cad_core`. Filtry Visual Studio odzwierciedlają tę strukturę. Katalog `src` jest dodany do ścieżek nagłówków aplikacji i IntelliSense.
 
+## Wybór algorytmu linii
+
+Pasek nad sceną zawiera natywne radio buttony GDI oraz Bresenham. Zmiana trybu odmalowuje scenę bez edycji dokumentu. Wybór obejmuje odcinki i wszystkie fragmenty łamanych aproksymujących Béziery oraz łuki. Uchwyty, znaczniki, linie pomocnicze i etykiety pozostają w GDI. Zwykłe krawędzie mają szerokość 2 pikseli, zaznaczone są niebieskie i mają 4 piksele, a pierwsza krawędź wyboru równoległości jest pomarańczowa. Własny tryb poszerza Bresenhama kwadratowym pędzlem.
+
+WM_PAINT przekazuje pasujący BackBuffer do drawDocument. Po wyczyszczeniu tła renderer synchronizuje GDI jednym GdiFlush, zapisuje wszystkie krawędzie przez CPU, a następnie rysuje dekoracje przez GDI. Przy niedostępnym buforze aplikacja rysuje przez GDI bezpośrednio do okna. Przycinanie obejmuje cały pędzel i rezerwuje 40 pikseli na pasek. Pozycje świata i trafianie w scenę zachowują dotychczasowy margines od dołu. Kliknięcia paska nie wybierają geometrii; kliknięcie sceny przywraca jej fokus klawiatury.
+
 ## Odpowiedzialności
 
 - `GdiRenderer.h/.cpp`: `cad::win32::drawDocument` rysuje krawędzie i znaczniki wierzchołków oraz wyróżnia przekazane ID zaznaczonego wierzchołka, krawędzi lub wielokąta. `worldToScreen` przelicza współrzędne świata na ekran, ze skalą 1:1, marginesem i odwróconą osią Y.
 - `AppState.h`: posiada przenośną [`EditorSession`](../../editor/README.md) oraz bufor obrazu. Sesja posiada dokument, zaznaczenie i stan gestu. Stan aplikacji powstaje raz w `wWinMain`, a wskaźnik jest przekazywany do okna przez `WM_NCCREATE` i przechowywany w `GWLP_USERDATA`.
+- `DibRenderer.h/.cpp`: przycina współrzędne ekranowe double, zaokrągla je i zapisuje piksele Bresenhama do DIB w formacie 0x00RRGGBB, z ponownym użyciem wektora roboczego i ograniczeniem pędzla do obszaru sceny.
 - `BackBuffer.h/.cpp`: posiada pamięciowy DC i odgórny, 32-bitowy `DIBSection`. Automatycznie przywraca poprzednią bitmapę DC i zwalnia swoje zasoby. Kopiowanie i przenoszenie tego właściciela uchwytów są wyłączone.
 - `LengthDialog.h/.cpp`: modalny dialog długości z zasobu `IDD_FIXED_LENGTH`. Wyświetla aktualną długość, obsługuje OK, Anuluj i zamknięcie okna, a tekst przekazuje do przenośnego `editor::parsePositiveLength`.
 

@@ -9,6 +9,7 @@
 #endif
 
 #include <windows.h>
+#include <cstdint>
 
 namespace cad::win32
 {
@@ -31,10 +32,15 @@ namespace cad::win32
         HDC dc() const noexcept;
         bool present(HDC destinationDc) const noexcept;
 
+        std::uint32_t* pixels() noexcept;
+        int width() const noexcept;
+        int height() const noexcept;
+
     private:
         HDC dc_ = nullptr;
         HBITMAP bitmap_ = nullptr;
         HGDIOBJ previousBitmap_ = nullptr;
+        std::uint32_t* pixels_ = nullptr;
         int width_ = 0;
         int height_ = 0;
     };

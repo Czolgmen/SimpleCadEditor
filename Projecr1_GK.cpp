@@ -37,6 +37,38 @@ namespace
     constexpr UINT parallelRemovalCommandBase = 0x10000;
     constexpr UINT_PTR pointerFrameTimer = 1;
     constexpr UINT pointerFrameIntervalMs = 1;
+    constexpr int algorithmBarHeight = 40;
+
+    bool createAlgorithmControls(HWND window, cad::render::LineAlgorithm algorithm)
+    {
+        const DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON;
+        HWND gdi = CreateWindowExW(0, L"BUTTON", L"GDI", style | WS_GROUP,
+            65, 8, 70, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_GDI)), hInst, nullptr);
+        HWND bresenham = CreateWindowExW(0, L"BUTTON", L"Bresenham", style,
+            145, 8, 125, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_BRESENHAM)), hInst, nullptr);
+        if (!gdi || !bresenham)
+            return false;
+        for (const HWND control : {gdi, bresenham})
+            SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), FALSE);
+        CheckRadioButton(window, IDC_LINE_GDI, IDC_LINE_BRESENHAM,
+            algorithm == cad::render::LineAlgorithm::Bresenham ? IDC_LINE_BRESENHAM : IDC_LINE_GDI);
+        return true;
+    }
+
+    void drawAlgorithmBar(HDC dc, const RECT& clientRect)
+    {
+        const int saved = SaveDC(dc);
+        if (!saved) return;
+        RECT bar = clientRect;
+        bar.bottom = (std::min)(bar.bottom, bar.top + algorithmBarHeight);
+        FillRect(dc, &bar, GetSysColorBrush(COLOR_BTNFACE));
+        SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+        RECT label{10, 8, 60, 32};
+        DrawTextW(dc, L"Linie:", -1, &label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        RestoreDC(dc, saved);
+    }
 
     void drawConsistencyWarning(HDC dc, const RECT& clientRect)
     {
@@ -224,7 +256,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Główna pętla komunikatów:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+        const HWND root = GetAncestor(msg.hwnd, GA_ROOT);
+        const bool fromAlgorithmControl = msg.hwnd != root &&
+            (GetDlgCtrlID(msg.hwnd) == IDC_LINE_GDI || GetDlgCtrlID(msg.hwnd) == IDC_LINE_BRESENHAM);
+        if (fromAlgorithmControl && msg.message == WM_KEYDOWN && (msg.wParam == VK_ESCAPE || msg.wParam == VK_DELETE))
+        {
+            SendMessageW(root, msg.message, msg.wParam, msg.lParam);
+            continue;
+        }
+        if (!TranslateAccelerator(root, hAccelTable, &msg) &&
+            !(fromAlgorithmControl && IsDialogMessageW(root, &msg)))
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -304,13 +345,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_CREATE:
+    {
+        auto* state = getAppState(hWnd);
+        if (!state || !createAlgorithmControls(hWnd, state->lineAlgorithm))
+            return -1;
+        // Parent repaints must not paint over the native radio controls.
+        SetWindowLongPtrW(hWnd, GWL_STYLE, GetWindowLongPtrW(hWnd, GWL_STYLE) | WS_CLIPCHILDREN);
+        return 0;
+    }
     case WM_LBUTTONDOWN:
     {
+        if (GET_Y_LPARAM(lParam) < algorithmBarHeight)
+            return 0;
         stopPointerUpdates(hWnd);
         auto* state = getAppState(hWnd);
         const auto position = mouseWorldPosition(hWnd, lParam);
         if (!state || !position)
             return 0;
+        SetFocus(hWnd);
         state->showConsistencyWarning = false;
         if (state->editor.pendingParallelEdge())
         {
@@ -418,6 +471,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CANCELMODE:
     case WM_KILLFOCUS:
     {
+        if (message == WM_KILLFOCUS && IsChild(hWnd, reinterpret_cast<HWND>(wParam)))
+            return 0;
         auto* state = getAppState(hWnd);
         if (state)
         {
@@ -471,6 +526,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             POINT clientPosition = screenPosition;
             if (!ScreenToClient(hWnd, &clientPosition) || !PtInRect(&clientRect, clientPosition))
                 return DefWindowProcW(hWnd, message, wParam, lParam);
+            if (clientPosition.y < algorithmBarHeight)
+                return 0;
 
             state->editor.selectAt(clientToWorld(clientPosition, clientRect));
         }
@@ -533,6 +590,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     case WM_COMMAND:
         {
+            const int controlId = LOWORD(wParam);
+            if (controlId == IDC_LINE_GDI || controlId == IDC_LINE_BRESENHAM)
+            {
+                if (HIWORD(wParam) == BN_CLICKED && lParam &&
+                    reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, controlId))
+                    if (auto* state = getAppState(hWnd))
+                    {
+                        state->lineAlgorithm = controlId == IDC_LINE_GDI
+                            ? cad::render::LineAlgorithm::Gdi : cad::render::LineAlgorithm::Bresenham;
+                        CheckRadioButton(hWnd, IDC_LINE_GDI, IDC_LINE_BRESENHAM, controlId);
+                        InvalidateRect(hWnd, nullptr, FALSE);
+                    }
+                return 0;
+            }
             if (auto* state = getAppState(hWnd); state && state->showConsistencyWarning)
             {
                 state->showConsistencyWarning = false;
@@ -732,23 +803,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 const int height = clientRect.bottom - clientRect.top;
                 if (width > 0 && height > 0)
                 {
-                    const auto drawFrame = [&](HDC targetDc)
+                    const auto drawFrame = [&](HDC targetDc, cad::win32::BackBuffer* buffer = nullptr)
                     {
                         FillRect(targetDc, &clientRect, GetSysColorBrush(COLOR_WINDOW));
                         if (state)
                         {
+                            RECT canvasRect = clientRect;
+                            canvasRect.top = (std::min)(canvasRect.bottom, canvasRect.top + algorithmBarHeight);
                             const auto& selection = state->editor.selection();
-                            cad::win32::drawDocument(targetDc, state->editor.document(), clientRect,
+                            cad::win32::drawDocument(targetDc, state->editor.document(), canvasRect,
                                 selection.vertex, selection.polygon, selection.edge, state->editor.pendingParallelEdge(),
-                                selection.controlPoint);
+                                selection.controlPoint, state->lineAlgorithm, buffer);
                             if (state->showConsistencyWarning)
-                                drawConsistencyWarning(targetDc, clientRect);
+                                drawConsistencyWarning(targetDc, canvasRect);
                         }
+                        drawAlgorithmBar(targetDc, clientRect);
                     };
 
                     if (state && state->backBuffer.resize(dc, width, height))
                     {
-                        drawFrame(state->backBuffer.dc());
+                        drawFrame(state->backBuffer.dc(), &state->backBuffer);
                         if (!state->backBuffer.present(dc))
                             drawFrame(dc);
                     }

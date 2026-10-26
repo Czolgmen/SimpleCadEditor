@@ -154,8 +154,12 @@
     <ClInclude Include="src\editor\LengthInput.h" />
     <ClInclude Include="src\editor\DragState.h" />
     <ClInclude Include="src\editor\Selection.h" />
+    <ClInclude Include="src\render\Bresenham.h" />
+    <ClInclude Include="src\render\LineClipping.h" />
+    <ClInclude Include="src\render\LineAlgorithm.h" />
     <ClInclude Include="src\platform\win32\AppState.h" />
     <ClInclude Include="src\platform\win32\BackBuffer.h" />
+    <ClInclude Include="src\platform\win32\DibRenderer.h" />
     <ClInclude Include="src\platform\win32\GdiRenderer.h" />
     <ClInclude Include="src\platform\win32\LengthDialog.h" />
   </ItemGroup>
@@ -164,7 +168,10 @@
     <ClCompile Include="src\editor\HitTester.cpp" />
     <ClCompile Include="src\editor\EditorSession.cpp" />
     <ClCompile Include="src\editor\LengthInput.cpp" />
+    <ClCompile Include="src\render\Bresenham.cpp" />
+    <ClCompile Include="src\render\LineClipping.cpp" />
     <ClCompile Include="src\platform\win32\BackBuffer.cpp" />
+    <ClCompile Include="src\platform\win32\DibRenderer.cpp" />
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp" />
     <ClCompile Include="src\platform\win32\LengthDialog.cpp" />
   </ItemGroup>

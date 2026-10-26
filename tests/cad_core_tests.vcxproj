@@ -109,11 +109,16 @@
     <ClCompile Include="geometry\Vec2Tests.cpp" />
     <ClCompile Include="geometry\BezierTests.cpp" />
     <ClCompile Include="geometry\ArcTests.cpp" />
+    <ClCompile Include="render\BresenhamTests.cpp" />
+    <ClCompile Include="..\src\render\Bresenham.cpp" />
+    <ClCompile Include="render\LineClippingTests.cpp" />
+    <ClCompile Include="..\src\render\LineClipping.cpp" />
     <ClCompile Include="editor\HitTesterTests.cpp" />
     <ClCompile Include="editor\CurveHitTesterTests.cpp" />
     <ClCompile Include="editor\ControlPointHitTesterTests.cpp" />
     <ClCompile Include="editor\ControlPointDragTests.cpp" />
     <ClCompile Include="editor\EditorSessionTests.cpp" />
+    <ClCompile Include="editor\ArcSplitTests.cpp" />
     <ClCompile Include="editor\EditorParallelTests.cpp" />
     <ClCompile Include="editor\LengthInputTests.cpp" />
     <ClCompile Include="..\src\editor\LengthInput.cpp" />
@@ -123,6 +128,8 @@
   <ItemGroup>
     <ClInclude Include="TestSupport.h" />
     <ClInclude Include="CurveTestSupport.h" />
+    <ClInclude Include="..\src\render\Bresenham.h" />
+    <ClInclude Include="..\src\render\LineClipping.h" />
     <ClInclude Include="..\src\editor\HitTester.h" />
     <ClInclude Include="..\src\editor\EditorSession.h" />
     <ClInclude Include="..\src\editor\LengthInput.h" />

@@ -50,6 +50,9 @@
     <ClCompile Include="..\src\editor\HitTester.cpp" />
     <ClCompile Include="..\src\editor\LengthInput.cpp" />
     <ClCompile Include="..\src\platform\win32\BackBuffer.cpp" />
+    <ClCompile Include="..\src\platform\win32\DibRenderer.cpp" />
+    <ClCompile Include="..\src\render\Bresenham.cpp" />
+    <ClCompile Include="..\src\render\LineClipping.cpp" />
     <ClCompile Include="..\src\platform\win32\GdiRenderer.cpp" />
     <ClCompile Include="..\src\platform\win32\LengthDialog.cpp" />
   </ItemGroup>

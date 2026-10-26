@@ -37,6 +37,12 @@ static UINT_PTR WINAPI testSetTimer(HWND window, UINT_PTR id, UINT interval, TIM
 #undef MessageBoxW
 #include "../CurveTestSupport.h"
 #include <cad_core/model/EdgeSampling.h>
+#include <cad_core/model/ContinuityJoins.h>
+#include <cad_core/constraints/ContinuityConstraint.h>
+#include <platform/win32/DibRenderer.h>
+
+#include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -48,8 +54,9 @@ namespace
         ControlPointRef control;
         HWND window = nullptr;
 
-        Fixture()
+        Fixture(render::LineAlgorithm algorithm = render::LineAlgorithm::Gdi)
         {
+            state.lineAlgorithm = algorithm;
             Document document;
             const std::array positions{Vec2{80, 80}, Vec2{240, 80}, Vec2{240, 200}, Vec2{80, 200}};
             const auto polygon = *document.findPolygon(document.addPolygon(positions));
@@ -300,6 +307,368 @@ namespace
         require(f.state.editor.selection().edge == id, "Rejected command lost selection");
     }
 
+    void arcSplitCommandCommitsTwoSegmentsAndSelectsMidpoint()
+    {
+        for (const double bulge : {-1.0, 1.0})
+        {
+            Fixture f;
+            Document initial = f.state.editor.document();
+            const auto polygon = initial.getPolygons().begin()->second;
+            const EdgeId id = polygon.edges[2];
+            require(initial.convertEdgeToArc(id) && initial.setArcBulge(id, bulge), "Window arc split fixture failed");
+            f.state.editor = editor::EditorSession(initial);
+            require(f.state.editor.selectAt(edgeMiddle(initial, id), 0) && f.state.editor.selection().edge == id &&
+                f.state.editor.canSplitSelectedEdge(), "Window arc split unavailable");
+            Document expected = initial;
+            const auto inserted = expected.splitEdge(id);
+            require(inserted.has_value(), "Expected model arc split failed");
+            const unsigned messages = messageBoxRequests;
+            SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_SPLIT_EDGE, 0), 0);
+            require(messageBoxRequests == messages, "Successful arc split displayed an error");
+            requireSameCurveDocument(f.state.editor.document(), expected);
+            require(f.state.editor.selection().vertex == inserted && !f.state.editor.selection().edge,
+                "Window arc split did not select the midpoint");
+            const auto* vertex = f.state.editor.document().findVertex(*inserted);
+            requireSameCurvePoint(vertex->position, {160, 200 + 80 * bulge});
+            require(vertex->continuity == ContinuitySetting{Continuity::G0, ContinuitySource::Default},
+                "Window arc split lost G0/Default");
+            f.requireStopped();
+        }
+    }
+
+    void arcSplitCommandRefitsRemainingG1Arc()
+    {
+        Fixture f;
+        Document initial;
+        const std::array positions{Vec2{80, 80}, Vec2{240, 80}, Vec2{240, 200}, Vec2{80, 200}};
+        const auto polygon = *initial.findPolygon(initial.addPolygon(positions));
+        const EdgeId reference = polygon.edges[0], divided = polygon.edges[1];
+        require(initial.convertEdgeToArc(reference) && initial.convertEdgeToArc(divided) &&
+            initial.setContinuity(polygon.vertices[1], Continuity::G1) && initial.setArcBulge(reference, 0.5) &&
+            solver::solveConstraints(initial, {}, {}, polygon.vertices[1]).status == solver::SolveStatus::Converged,
+            "Window G1 arc pair fixture failed");
+        f.state.editor = editor::EditorSession(initial);
+        require(f.state.editor.selectAt(edgeMiddle(initial, divided), 0) && f.state.editor.selection().edge == divided &&
+            f.state.editor.canSplitSelectedEdge(), "Window G1 arc split unavailable");
+        Document expected = initial;
+        const auto inserted = expected.splitEdge(divided);
+        require(inserted.has_value(), "Expected G1 model split failed");
+        const unsigned messages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_SPLIT_EDGE, 0), 0);
+        require(messageBoxRequests == messages && f.state.editor.selection().vertex == inserted, "G1 split command failed");
+        const double bulge = std::get<CircularArc>(f.state.editor.document().findEdge(reference)->geometry).bulge;
+        require(std::abs(bulge - 0.5) > 1e-3 && expected.setArcBulge(reference, bulge), "G1 command did not refit surviving arc");
+        requireSameCurveDocument(f.state.editor.document(), expected);
+        const auto joins = collectContinuityJoins(f.state.editor.document());
+        require(joins && joins->size() == 1, "Window split lost G1 join");
+        const auto errors = constraint::continuityErrors(f.state.editor.document(), joins->front());
+        require(errors && errors->size() == 1 && std::abs(errors->front()) <= 1e-6, "Window split left unsatisfied G1");
+        f.requireStopped();
+    }
+
+    void rejectedArcSplitCommandShowsErrorAndKeepsState()
+    {
+        Fixture f;
+        Document initial = f.state.editor.document();
+        const EdgeId id = initial.getPolygons().begin()->second.edges[2];
+        require(initial.convertEdgeToArc(id), "Rejected split arc fixture failed");
+        const std::array positions{Vec2{320, 20}, Vec2{340, 20}, Vec2{330, 40}};
+        const auto triangle = *initial.findPolygon(initial.addPolygon(positions));
+        for (std::size_t i = 0; i < 3; ++i)
+            require(initial.setFixedLength(triangle.edges[i], i == 2 ? 30 : 10), "Rejected split conflict fixture failed");
+        f.state.editor = editor::EditorSession(initial);
+        require(f.state.editor.selectAt(edgeMiddle(initial, id), 0) && f.state.editor.selection().edge == id &&
+            f.state.editor.canSplitSelectedEdge(), "Rejected arc split command unavailable");
+        const unsigned messages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, MAKEWPARAM(IDM_SPLIT_EDGE, 0), 0);
+        require(messageBoxRequests == messages + 1 && lastMessageBoxText.find(L"podzielić") != std::wstring::npos,
+            "Rejected arc split did not display its error");
+        requireSameCurveDocument(f.state.editor.document(), initial);
+        require(f.state.editor.selection().edge == id && f.state.editor.canSplitSelectedEdge(), "Rejected split lost arc selection");
+        Document actualProbe = f.state.editor.document(), expectedProbe = initial;
+        const std::array probe{Vec2{400, 0}, Vec2{420, 0}, Vec2{400, 20}};
+        require(actualProbe.addPolygon(probe) == expectedProbe.addPolygon(probe), "Rejected window split consumed IDs");
+        requireSameCurveDocument(actualProbe, expectedProbe);
+        f.requireStopped();
+    }
+
+    struct DibFixture
+    {
+        win32::BackBuffer buffer;
+        std::vector<render::PixelPoint> scratch{{999, 999}, {-999, -999}};
+        static constexpr std::uint32_t background = 0x00EEEEEE;
+
+        DibFixture()
+        {
+            const HDC reference = GetDC(nullptr);
+            require(reference != nullptr, "Could not acquire reference DC");
+            const bool created = buffer.resize(reference, 8, 6);
+            ReleaseDC(nullptr, reference);
+            require(created && buffer.pixels(), "Could not create test DIB");
+            std::fill_n(buffer.pixels(), 48, background);
+        }
+    };
+
+    void dibRasterClipsAndChangesOnlyExpectedPixels()
+    {
+        DibFixture f;
+        constexpr std::uint32_t horizontal = 0x00123456, vertical = 0x00765432, point = 0x000078D7;
+        win32::drawBresenhamLine(f.buffer, {-1e12, 1.2}, {1e12, 1.2}, horizontal, f.scratch);
+        win32::drawBresenhamLine(f.buffer, {5.2, -1e12}, {5.2, 1e12}, vertical, f.scratch);
+        win32::drawBresenhamLine(f.buffer, {7, 5}, {7, 5}, point, f.scratch);
+        require(f.scratch.size() == 1, "Working vector retained pixels from previous lines");
+        for (int y = 0; y < 6; ++y)
+        for (int x = 0; x < 8; ++x)
+        {
+            auto expected = DibFixture::background;
+            if (y == 1) expected = horizontal;
+            if (x == 5) expected = vertical;
+            if (x == 7 && y == 5) expected = point;
+            require(f.buffer.pixels()[y * 8 + x] == expected, "DIB line changed an unexpected pixel or row");
+        }
+    }
+
+    void dibRasterUsesRgbPackingAndPreservesGdiBackground()
+    {
+        DibFixture f;
+        const RECT rect{0, 0, 8, 6};
+        require(FillRect(f.buffer.dc(), &rect, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH))) != 0,
+            "GDI background fill failed");
+        GdiFlush(); // The drawing batch owner synchronizes GDI before CPU writes.
+        win32::drawBresenhamLine(f.buffer, {1.2, 2.2}, {4.2, 2.2}, 0x00123456, f.scratch);
+        require(GetPixel(f.buffer.dc(), 1, 2) == RGB(0x12, 0x34, 0x56), "DIB color channels are reversed");
+        require(GetPixel(f.buffer.dc(), 4, 2) == RGB(0x12, 0x34, 0x56), "Raster lost last endpoint");
+        require(GetPixel(f.buffer.dc(), 1, 1) == RGB(255, 255, 255), "Raster overwrote GDI background");
+        GdiFlush();
+    }
+
+    void dibRasterRejectsInvalidLinesAndHandlesBufferLifecycle()
+    {
+        DibFixture f;
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const double infinity = std::numeric_limits<double>::infinity();
+        for (const auto segment : {std::array{Vec2{-10, -10}, Vec2{-1, -1}},
+            std::array{Vec2{20, 20}, Vec2{30, 30}}, std::array{Vec2{nan, 0}, Vec2{4, 4}},
+            std::array{Vec2{0, 0}, Vec2{infinity, 4}}})
+            win32::drawBresenhamLine(f.buffer, segment[0], segment[1], 0x00123456, f.scratch);
+        require(std::all_of(f.buffer.pixels(), f.buffer.pixels() + 48,
+            [](std::uint32_t color) { return color == DibFixture::background; }),
+            "Rejected line changed DIB memory");
+
+        f.buffer.reset();
+        require(!f.buffer.pixels() && f.buffer.width() == 0 && f.buffer.height() == 0,
+            "Reset retained stale pixel storage");
+        win32::drawBresenhamLine(f.buffer, {0, 0}, {7, 5}, 0x00123456, f.scratch);
+        const HDC reference = GetDC(nullptr);
+        require(reference != nullptr, "Could not acquire resize DC");
+        const bool resized = f.buffer.resize(reference, 1, 1);
+        ReleaseDC(nullptr, reference);
+        require(resized && f.buffer.pixels() && f.buffer.width() == 1 && f.buffer.height() == 1,
+            "Resize did not publish replacement pixel storage");
+        f.buffer.pixels()[0] = DibFixture::background;
+        win32::drawBresenhamLine(f.buffer, {-10, -10}, {10, 10}, 0x00123456, f.scratch);
+        require(f.buffer.pixels()[0] == 0x00123456 && f.scratch.size() == 1,
+            "Single-pixel buffer did not receive clipped point");
+    }
+
+    void radioControlsSwitchOnlyTheView()
+    {
+        Fixture f;
+        const HWND gdi = GetDlgItem(f.window, IDC_LINE_GDI);
+        const HWND bresenham = GetDlgItem(f.window, IDC_LINE_BRESENHAM);
+        require(gdi && bresenham &&
+            (GetWindowLongPtrW(gdi, GWL_STYLE) & BS_TYPEMASK) == BS_AUTORADIOBUTTON &&
+            (GetWindowLongPtrW(bresenham, GWL_STYLE) & BS_TYPEMASK) == BS_AUTORADIOBUTTON,
+            "Native algorithm radio controls missing");
+        require(SendMessageW(gdi, BM_GETCHECK, 0, 0) == BST_CHECKED &&
+            SendMessageW(bresenham, BM_GETCHECK, 0, 0) == BST_UNCHECKED, "Wrong default radio selection");
+        const auto edge = f.state.editor.document().getPolygons().begin()->second.edges[1];
+        require(f.state.editor.selectAt(edgeMiddle(f.state.editor.document(), edge), 0) &&
+            f.state.editor.beginParallelSelection(), "View switch selection fixture failed");
+        const Document before = f.state.editor.document();
+        f.state.showConsistencyWarning = true;
+        SendMessageW(f.window, WM_KILLFOCUS, reinterpret_cast<WPARAM>(bresenham), 0);
+        for (const HWND control : {bresenham, bresenham, gdi})
+        {
+            SendMessageW(control, BM_CLICK, 0, 0);
+            const bool useBresenham = control == bresenham;
+            require(f.state.lineAlgorithm == (useBresenham ? render::LineAlgorithm::Bresenham : render::LineAlgorithm::Gdi),
+                "Radio did not change selected algorithm");
+            require(SendMessageW(control, BM_GETCHECK, 0, 0) == BST_CHECKED &&
+                SendMessageW(useBresenham ? gdi : bresenham, BM_GETCHECK, 0, 0) == BST_UNCHECKED,
+                "Radio group lost exclusive check");
+            requireSameCurveDocument(f.state.editor.document(), before);
+            require(f.state.editor.selection().edge == edge && f.state.editor.pendingParallelEdge() == edge &&
+                f.state.showConsistencyWarning, "View switch changed editing state");
+        }
+        Fixture initiallyBresenham{render::LineAlgorithm::Bresenham};
+        require(SendMessageW(GetDlgItem(initiallyBresenham.window, IDC_LINE_BRESENHAM), BM_GETCHECK, 0, 0) == BST_CHECKED,
+            "Window creation ignored initial renderer mode");
+    }
+
+    struct RenderFixture
+    {
+        win32::BackBuffer buffer;
+        Document document;
+        cad::Polygon polygon;
+        const RECT rect{0, 0, 320, 240};
+
+        RenderFixture()
+        {
+            const HDC reference = GetDC(nullptr);
+            require(reference != nullptr, "Could not acquire renderer reference DC");
+            const bool created = buffer.resize(reference, rect.right, rect.bottom);
+            ReleaseDC(nullptr, reference);
+            require(created, "Could not create renderer DIB");
+            const std::array points{Vec2{40, 40}, Vec2{220, 40}, Vec2{220, 180}, Vec2{40, 180}};
+            polygon = *document.findPolygon(document.addPolygon(points));
+        }
+
+        void draw(render::LineAlgorithm algorithm, std::optional<EdgeId> selected = {},
+            std::optional<EdgeId> pending = {}, bool passBuffer = true)
+        {
+            FillRect(buffer.dc(), &rect, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+            win32::drawDocument(buffer.dc(), document, rect, {}, {}, selected, pending, {},
+                algorithm, passBuffer ? &buffer : nullptr);
+            GdiFlush();
+        }
+
+        std::uint32_t pixel(int x, int y)
+        {
+            return buffer.pixels()[y * rect.right + x] & 0x00FFFFFF;
+        }
+    };
+
+    void rendererDispatchesSegmentsBezierAndArcs()
+    {
+        RenderFixture f;
+        require(f.document.convertEdgeToBezier(f.polygon.edges[0]) &&
+            f.document.moveControlPoint({f.polygon.edges[0], BezierControlPoint::First}, {60, 120}) &&
+            f.document.moveControlPoint({f.polygon.edges[0], BezierControlPoint::Second}, {160, 120}),
+            "Renderer Bezier fixture failed");
+        for (const auto vertex : f.polygon.vertices)
+            require(f.document.setContinuity(vertex, Continuity::G0), "Renderer G0 fixture failed");
+        require(f.document.convertEdgeToArc(f.polygon.edges[1]), "Renderer arc fixture failed");
+        for (const auto algorithm : {render::LineAlgorithm::Gdi, render::LineAlgorithm::Bresenham})
+        {
+            f.draw(algorithm);
+            // Analytic midpoint of the cubic, rightmost point of the semicircle,
+            // and midpoint of a straight edge; none lies on a control guide.
+            require(f.pixel(135, 120) == 0, "Selected algorithm missed Bezier midpoint");
+            require(f.pixel(310, 110) == 0, "Selected algorithm missed arc midpoint");
+            require(f.pixel(150, 40) == 0, "Selected algorithm missed straight edge");
+            require(f.pixel(135, 180) == 0x00FFFFFF, "Renderer drew Bezier chord");
+            require(f.pixel(240, 110) == 0x00FFFFFF, "Renderer drew arc chord");
+        }
+        f.draw(render::LineAlgorithm::Bresenham, f.polygon.edges[0]);
+        require(f.pixel(135, 120) == 0x000078D7, "Bezier selection lost blue color");
+        f.draw(render::LineAlgorithm::Bresenham, f.polygon.edges[1], f.polygon.edges[1]);
+        require(f.pixel(310, 110) == 0x00DC7800, "Pending parallel color did not override selection");
+    }
+
+    void rendererPreservesWidthsAndFallsBackToGdi()
+    {
+        RenderFixture f;
+        const auto edge = f.polygon.edges[2];
+        f.draw(render::LineAlgorithm::Bresenham);
+        require(f.pixel(150, 39) == 0 && f.pixel(150, 40) == 0 &&
+            f.pixel(150, 38) == 0x00FFFFFF && f.pixel(150, 41) == 0x00FFFFFF,
+            "Normal Bresenham stroke is not two pixels wide");
+        f.draw(render::LineAlgorithm::Bresenham, edge);
+        for (int y = 38; y <= 41; ++y)
+            require(f.pixel(150, y) == 0x000078D7, "Selected Bresenham stroke is not four pixels wide");
+        require(f.pixel(150, 37) == 0x00FFFFFF && f.pixel(150, 42) == 0x00FFFFFF,
+            "Selected stroke exceeded intended width");
+        f.draw(render::LineAlgorithm::Gdi, edge);
+        std::vector<std::uint32_t> reference(f.buffer.pixels(), f.buffer.pixels() + 320 * 240);
+        f.draw(render::LineAlgorithm::Bresenham, edge, {}, false);
+        for (std::size_t i = 0; i < reference.size(); ++i)
+            require((f.buffer.pixels()[i] & 0x00FFFFFF) == (reference[i] & 0x00FFFFFF),
+                "Bresenham without DIB did not fall back to GDI");
+    }
+
+    void thickDibBrushStaysWithinStorage()
+    {
+        DibFixture f;
+        win32::drawBresenhamLine(f.buffer, {0, 0}, {0, 0}, 0x00123456, f.scratch, 4);
+        for (int y = 0; y < 6; ++y)
+        for (int x = 0; x < 8; ++x)
+            require(f.buffer.pixels()[y * 8 + x] == (x < 2 && y < 2 ? 0x00123456 : DibFixture::background),
+                "Thick corner brush escaped clipped square");
+        win32::drawBresenhamLine(f.buffer, {0, 0}, {0, 0}, 0x000078D7, f.scratch, (std::numeric_limits<int>::max)());
+        require(std::all_of(f.buffer.pixels(), f.buffer.pixels() + 48,
+            [](std::uint32_t color) { return color == 0x000078D7; }), "Oversized brush overflowed arithmetic");
+        win32::drawBresenhamLine(f.buffer, {0, 0}, {0, 0}, 0, f.scratch, 0);
+        win32::drawBresenhamLine(f.buffer, {0, 0}, {0, 0}, 0, f.scratch, -1);
+        require(std::all_of(f.buffer.pixels(), f.buffer.pixels() + 48,
+            [](std::uint32_t color) { return color == 0x000078D7; }), "Nonpositive stroke width changed storage");
+    }
+
+    void rasterClipBoundsTheEntireBrush()
+    {
+        DibFixture f;
+        const RECT clip{2, 2, 6, 5};
+        win32::drawBresenhamLine(f.buffer, {-1e12, 2}, {1e12, 2}, 0x00123456, f.scratch, 4, &clip);
+        for (int y = 0; y < 6; ++y)
+        for (int x = 0; x < 8; ++x)
+            require(f.buffer.pixels()[y * 8 + x] ==
+                (x >= 2 && x < 6 && y >= 2 && y < 4 ? 0x00123456 : DibFixture::background),
+                "Wide raster brush left the requested canvas rectangle");
+        const std::vector<std::uint32_t> before(f.buffer.pixels(), f.buffer.pixels() + 48);
+        for (const RECT empty : {RECT{2, 2, 2, 5}, RECT{7, 5, 2, 2}, RECT{-10, -10, -1, -1},
+            RECT{20, 20, 30, 30}})
+            win32::drawBresenhamLine(f.buffer, {0, 0}, {7, 5}, 0, f.scratch, 4, &empty);
+        require(std::equal(before.begin(), before.end(), f.buffer.pixels()), "Empty clip changed the raster");
+
+        RenderFixture scene;
+        const RECT canvas{0, 40, 320, 240};
+        FillRect(scene.buffer.dc(), &scene.rect, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+        win32::drawDocument(scene.buffer.dc(), scene.document, canvas, {}, {}, scene.polygon.edges[2], {}, {},
+            render::LineAlgorithm::Bresenham, &scene.buffer);
+        GdiFlush();
+        require(scene.pixel(150, 38) == 0x00FFFFFF && scene.pixel(150, 39) == 0x00FFFFFF &&
+            scene.pixel(150, 40) == 0x000078D7 && scene.pixel(150, 41) == 0x000078D7,
+            "Renderer brush overwrote reserved toolbar area");
+    }
+
+    void windowPaintUsesSelectedAlgorithmAfterResize()
+    {
+        Fixture f;
+        Document document;
+        const std::array points{Vec2{40, 40}, Vec2{220, 40}, Vec2{220, 180}, Vec2{40, 180}};
+        const auto polygon = *document.findPolygon(document.addPolygon(points));
+        f.state.editor = editor::EditorSession{document};
+        require(f.state.editor.selectAt({130, 40}, 0) && f.state.editor.selection().edge == polygon.edges[0],
+            "Paint selection fixture failed");
+        SendMessageW(GetDlgItem(f.window, IDC_LINE_BRESENHAM), BM_CLICK, 0, 0);
+        for (const bool resize : {false, true})
+        {
+            if (resize)
+                require(SetWindowPos(f.window, nullptr, 0, 0, 400, 300, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE),
+                    "Paint resize failed");
+            RECT rect{};
+            require(GetClientRect(f.window, &rect), "Paint client rectangle missing");
+            InvalidateRect(f.window, nullptr, FALSE);
+            SendMessageW(f.window, WM_PAINT, 0, 0);
+            auto& buffer = f.state.backBuffer;
+            require(buffer.pixels() && buffer.width() == rect.right && buffer.height() == rect.bottom,
+                "WM_PAINT did not resize DIB");
+            GdiFlush();
+            const int y = rect.bottom - 60;
+            require((buffer.pixels()[y * buffer.width() + 150] & 0x00FFFFFF) == 0x000078D7 &&
+                (buffer.pixels()[(y - 2) * buffer.width() + 150] & 0x00FFFFFF) == 0x000078D7,
+                "WM_PAINT did not use selected thick Bresenham stroke");
+            require(f.state.lineAlgorithm == render::LineAlgorithm::Bresenham, "Resize reset algorithm");
+        }
+        SendMessageW(GetDlgItem(f.window, IDC_LINE_GDI), BM_CLICK, 0, 0);
+        SendMessageW(f.window, WM_PAINT, 0, 0);
+        require(f.state.lineAlgorithm == render::LineAlgorithm::Gdi, "Could not restore GDI after paint");
+        requireSameCurveDocument(f.state.editor.document(), document);
+        SendMessageW(f.window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(15, 15));
+        require(f.state.editor.selection().edge == polygon.edges[0] && !f.state.editor.isDragging(),
+            "Algorithm bar clicks affected geometry");
+    }
+
     void timerFailureKeepsImmediateDraggingFunctional()
     {
         Fixture f;
@@ -325,6 +694,18 @@ int main()
     if (!RegisterClassW(&klass))
         return 1;
     const std::array tests{
+        cad::tests::TestCase{"radio controls switch only the view", radioControlsSwitchOnlyTheView},
+        cad::tests::TestCase{"renderer dispatches segments Bezier and arcs", rendererDispatchesSegmentsBezierAndArcs},
+        cad::tests::TestCase{"renderer preserves widths and falls back to GDI", rendererPreservesWidthsAndFallsBackToGdi},
+        cad::tests::TestCase{"thick DIB brush stays within storage", thickDibBrushStaysWithinStorage},
+        cad::tests::TestCase{"raster clip bounds the entire brush", rasterClipBoundsTheEntireBrush},
+        cad::tests::TestCase{"window paint uses selected algorithm after resize", windowPaintUsesSelectedAlgorithmAfterResize},
+        cad::tests::TestCase{"DIB raster clips and changes only expected pixels", dibRasterClipsAndChangesOnlyExpectedPixels},
+        cad::tests::TestCase{"DIB raster uses RGB packing and preserves GDI background", dibRasterUsesRgbPackingAndPreservesGdiBackground},
+        cad::tests::TestCase{"DIB raster rejects invalid lines and handles buffer lifecycle", dibRasterRejectsInvalidLinesAndHandlesBufferLifecycle},
+        cad::tests::TestCase{"arc split command commits segments and selects midpoint", arcSplitCommandCommitsTwoSegmentsAndSelectsMidpoint},
+        cad::tests::TestCase{"arc split command refits remaining G1 arc", arcSplitCommandRefitsRemainingG1Arc},
+        cad::tests::TestCase{"rejected arc split command displays error and preserves state", rejectedArcSplitCommandShowsErrorAndKeepsState},
         cad::tests::TestCase{"conversion menu matches selected geometry", edgeConversionMenuMatchesSelectedGeometry},
         cad::tests::TestCase{"arc conversion commands round trip through WndProc", arcConversionCommandsRoundTripThroughWindowProcedure},
         cad::tests::TestCase{"rejected arc command explains continuity and preserves state", failedArcCommandShowsReasonAndPreservesDocument},
