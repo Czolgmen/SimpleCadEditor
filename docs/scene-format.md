@@ -28,7 +28,7 @@ Serializacja należy do rdzenia niezależnego od platformy: [SceneIO.h](../cad_c
 
 Identyfikatory muszą być dodatnie i unikalne w swoim typie. Liczniki muszą być większe od zapisanych ID. Wierzchołki i krawędzie należą dokładnie do jednego miejsca obrysu; obiekty osierocone i brakujące odwołania są odrzucane. Pary równoległości nie mogą się powtarzać także w odwróconej kolejności.
 
-Grubość jest liczbą całkowitą w zakresie 1–32, w pikselach ekranu. W rekordach `E` wersji 1 pomija się to pole; wszystkie pozostałe pola mają tę samą kolejność. Wyróżnienie zaznaczenia jest tymczasowe i nie zmienia zapisanej grubości.
+Grubość jest liczbą całkowitą w zakresie 1-32, w pikselach ekranu. W rekordach `E` wersji 1 pomija się to pole; wszystkie pozostałe pola mają tę samą kolejność. Wyróżnienie zaznaczenia jest tymczasowe i nie zmienia zapisanej grubości.
 
 Odczyt i zapis sprawdzają topologię, poprawność krzywych i ustawień ciągłości oraz błędy ograniczeń przy tolerancjach domyślnych `SolveOptions`. Dane nie są dopasowywane solverem: odczyt odtwarza zapisane pozycje. Limity wynoszą 16 MiB na plik i 100000 rekordów na sekcję.
 

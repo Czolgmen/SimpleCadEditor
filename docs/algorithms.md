@@ -28,17 +28,17 @@ Pseudokod przedstawia zasadniczy przebieg obliczeń. Pomija część kontroli po
 | 6 | Wyznaczanie stycznych i błędów relacji | `edgeStartTangent`, `continuityErrors`, `evaluateErrors` | `cad_core/src/model/EdgeTangents.cpp`, `cad_core/src/constraints/*`, `cad_core/src/solver/ConstraintSolver.cpp` |
 | 7 | Rzut ortogonalny na odcinek | `pointSegmentDistanceSquared` | `src/editor/HitTester.cpp` |
 | 8 | Wyszukiwanie najbliższej krawędzi | `hitTestEdge` | `src/editor/HitTester.cpp` |
-| 9 | Ray casting, reguła even–odd | `pointInPolygon` | `src/editor/HitTester.cpp` |
+| 9 | Ray casting, reguła even-odd | `pointInPolygon` | `src/editor/HitTester.cpp` |
 | 10 | Cohen–Sutherland | `clipLineToViewport` | `src/render/LineClipping.cpp` |
 | 11 | Bresenham | `rasterizeLine` | `src/render/Bresenham.cpp` |
 | 12 | Kwadratowy pędzel i buforowanie klatki | `drawBresenhamLine`, `drawDocument`, `BackBuffer::present` | `src/platform/win32/DibRenderer.cpp`, `GdiRenderer.cpp`, `BackBuffer.cpp` |
 | 13 | Jacobian przez różnice skończone w przód | `computePointJacobian` | `cad_core/src/solver/Jacobian.cpp` |
 | 14 | Eliminacja Gaussa z częściowym wyborem elementu głównego | `solveLinearSystem` | `cad_core/src/solver/DenseLinearAlgebra.cpp` |
-| 15 | Tłumiony krok Gaussa–Newtona, typu Levenberga–Marquardta | `dampedCorrection` | `cad_core/src/solver/ConstraintSolver.cpp` |
+| 15 | Tłumiony krok Gaussa-Newtona, typu Levenberga-Marquardta | `dampedCorrection` | `cad_core/src/solver/ConstraintSolver.cpp` |
 | 16 | Backtracking i pętla solvera | `solvePointConstraintSystem` | `cad_core/src/solver/ConstraintSolver.cpp` |
 | 17 | Awaryjne przeszukiwanie współrzędnych | `tryPerpendicularPointStep` | `cad_core/src/solver/ConstraintSolver.cpp` |
 | 18 | Koalescencja ruchu myszy | `WndProc`: `WM_MOUSEMOVE`, `WM_TIMER`, `WM_LBUTTONUP` | `Projecr1_GK.cpp` |
-| 19 | Xiaolin Wu — antyaliasing | `rasterizeWuLine`, `drawWuPolyline` | `src/render/Wu.cpp`, `src/platform/win32/DibRenderer.cpp` |
+| 19 | Xiaolin Wu - antyaliasing | `rasterizeWuLine`, `drawWuPolyline` | `src/render/Wu.cpp`, `src/platform/win32/DibRenderer.cpp` |
 
 Przykładowy przebieg rysowania krzywej:
 
@@ -81,7 +81,7 @@ bezierPoint(P0, P1, P2, P3, t):
 
 **Zasada działania:** Krzywa jest przekształcana do bazy potęgowej `B(t)=a*t³+b*t²+c*t+P0`, a następnie obliczana w postaci `((a*t+b)*t+c)*t+P0`. Schemat Hornera ogranicza liczbę mnożeń i eliminuje osobne wyznaczanie potęg. Operacje na wektorach obliczają obie współrzędne jednocześnie. Funkcja służy obecnie do ewaluacji pojedynczych punktów w testach; renderer korzysta z próbkowania całej krzywej.
 
-## 2. Różnice progresywne — forward differencing
+## 2. Różnice progresywne - forward differencing
 
 **Lokalizacja w kodzie:** [Bezier.cpp](../cad_core/src/geometry/Bezier.cpp), `cad::sampleBezier`. Wywoływana przez [EdgeSampling.cpp](../cad_core/src/model/EdgeSampling.cpp), `sampleEdge`.
 
@@ -264,7 +264,7 @@ pointSegmentDistanceSquared(P,A,B):
 
 **Zasada działania:** Punkt prostej ma postać `Q=A+t*v`. Warunek prostopadłości `dot(P-Q,v)=0` prowadzi do `t=dot(P-A,v)/dot(v,v)`. Ograniczenie `t` do `[0,1]` uwzględnia końce odcinka: jeżeli rzut leży poza nim, najbliższym punktem jest odpowiedni koniec. Wynikiem jest kwadrat odległości, co eliminuje pierwiastkowanie przy porównywaniu kandydatów. Odcinek zbieżny do punktu jest obsługiwany osobno, bez dzielenia przez zero.
 
-## 8. Wyszukiwanie najbliższej krawędzi — hit testing
+## 8. Wyszukiwanie najbliższej krawędzi - hit testing
 
 **Lokalizacja w kodzie:** [HitTester.cpp](../src/editor/HitTester.cpp), `hitTestEdge`. Zaznaczenie zapisuje `EditorSession::selectAt` w [EditorSession.cpp](../src/editor/EditorSession.cpp).
 
@@ -560,7 +560,7 @@ solve(document,fixedPoint,options):
 
 **Zasada działania:** Backtracking ocenia pełny krok, a następnie jego kolejne połowy na rzeczywistej geometrii. Nieudane skracanie zwiększa tłumienie i powoduje ponowne wyznaczenie poprawki. Jacobian jest aktualizowany po przyjęciu ruchu, a nie po każdym skróceniu tego samego kroku. Akceptacja wymaga spełnienia tolerancji lub zmniejszenia normy znormalizowanych reszt. Limit iteracji dotyczy zaakceptowanych poprawek, a nie czasu ani wszystkich prób. Ostateczne zatwierdzenie wymaga poprawnej topologii, relacji i przypiętych punktów. Brak zbieżności pozostawia dokument wejściowy bez zmian; metoda lokalna nie gwarantuje rozwiązania globalnego ani jedynego.
 
-## 17. Awaryjne przeszukiwanie współrzędnych — coordinate search
+## 17. Awaryjne przeszukiwanie współrzędnych - coordinate search
 
 **Lokalizacja w kodzie:** [ConstraintSolver.cpp](../cad_core/src/solver/ConstraintSolver.cpp), `tryPerpendicularPointStep`. W starszej ścieżce testowej odpowiada jej `tryPerpendicularStep`.
 
@@ -591,7 +591,7 @@ tryPerpendicularPointStep(candidate,F,variables,s):
 
 **Zasada działania:** Reszta równoległości ma postać sinusa kąta. Przy 90° jej moduł osiąga maksimum, a pochodna względem kąta jest zerowa, przez co linearyzacja może nie wskazać użytecznego ruchu. Deterministyczne próby w kierunkach dodatniej i ujemnej osi X lub Y pozwalają opuścić takie ustawienie. Akceptowana jest pierwsza dopuszczalna próba zmniejszająca łączną normę reszt, a tłumienie wraca do `0,001`. Mechanizm jest stosowany po niepowodzeniu kroku Jacobiego i nie zastępuje podstawowej metody solvera.
 
-## 18. Koalescencja ruchu myszy — latest sample wins
+## 18. Koalescencja ruchu myszy - latest sample wins
 
 **Lokalizacja w kodzie:** [Projecr1_GK.cpp](../Projecr1_GK.cpp), `WndProc`: obsługa `WM_MOUSEMOVE`, `WM_TIMER`, `WM_LBUTTONUP`; stan przechowuje [AppState.h](../src/platform/win32/AppState.h).
 
@@ -619,7 +619,7 @@ WM_LBUTTONUP:
 
 **Zasada działania:** Stan adaptera przechowuje wyłącznie najnowszą oczekującą pozycję kursora. Kolejne `WM_MOUSEMOVE` nadpisują ją przed obsługą timera, dzięki czemu solver nie przelicza całej historii ruchu. Żądany interwał wynosi 1 ms, lecz rzeczywista obsługa zależy od systemu i kolejki komunikatów. Zwolnienie przycisku wymusza końcową próbkę. Awaria utworzenia timera uruchamia bezpośrednią obsługę. Mechanizm scala dane ruchu we własnym stanie aplikacji i nie usuwa dowolnych komunikatów z kolejki systemowej.
 
-## 19. Algorytm Xiaolina Wu — antyaliasing
+## 19. Algorytm Xiaolina Wu - antyaliasing
 
 **Lokalizacja w kodzie:** [Wu.cpp](../src/render/Wu.cpp), `cad::render::rasterizeWuLine`; mieszanie z tłem i łączenie segmentów w [DibRenderer.cpp](../src/platform/win32/DibRenderer.cpp), `drawWuPolyline`. Tryb wybiera przycisk **Wu (AA)**.
 

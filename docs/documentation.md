@@ -211,11 +211,11 @@ Q = A+t*(B-A)
 distanceSquared = |P-Q|²
 ```
 
-Odcinek zerowy jest traktowany jak punkt. Dla krzywej analizowane są segmenty łamanej, a wybór dotyczy najbliższej krawędzi w tolerancji. Test wnętrza stosuje poziomy promień i regułę even–odd: nieparzysta liczba przecięć oznacza wnętrze, również przy samoprzecięciach.
+Odcinek zerowy jest traktowany jak punkt. Dla krzywej analizowane są segmenty łamanej, a wybór dotyczy najbliższej krawędzi w tolerancji. Test wnętrza stosuje poziomy promień i regułę even-odd: nieparzysta liczba przecięć oznacza wnętrze, również przy samoprzecięciach.
 
 ### Przycinanie i rasteryzacja
 
-Algorytm **Cohena–Sutherlanda** przycina odcinki w `double`. Kody bitowe opisują położenie końców względem prostokąta i umożliwiają przyjęcie, odrzucenie lub wyznaczenie przecięcia. Konwersja do współrzędnych całkowitych następuje po przycięciu.
+Algorytm **Cohena-Sutherlanda** przycina odcinki w `double`. Kody bitowe opisują położenie końców względem prostokąta i umożliwiają przyjęcie, odrzucenie lub wyznaczenie przecięcia. Konwersja do współrzędnych całkowitych następuje po przycięciu.
 
 Tryb **GDI** korzysta z `MoveToEx` i `LineTo`. Własny **Bresenham** wyznacza piksele przez całkowitoliczbową aktualizację błędu dla wszystkich ośmiu oktantów. Kwadratowy pędzel rozszerza ślad zgodnie z grubością krawędzi.
 
@@ -251,7 +251,7 @@ Każde ograniczenie jest reprezentowane przez resztę, której wartość zerowa 
 
 ### Metoda rozwiązania
 
-`solvePointConstraintSystem`, wywoływana przez publiczne `solveConstraints`, realizuje tłumioną metodę Gaussa–Newtona z krokiem typu Levenberga–Marquardta i redukcją długości kroku.
+`solvePointConstraintSystem`, wywoływana przez publiczne `solveConstraints`, realizuje tłumioną metodę Gaussa-Newtona z krokiem typu Levenberga-Marquardta i redukcją długości kroku.
 
 1. Przygotowanie kopii dokumentu, dopasowanie łuków i walidacja wejścia.
 2. Zebranie relacji i wolnych punktów; prowadzony punkt oraz dodatkowo unieruchomione wierzchołki są wyłączone z niewiadomych.
