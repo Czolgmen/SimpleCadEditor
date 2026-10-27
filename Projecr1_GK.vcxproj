@@ -75,6 +75,9 @@
       <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)cad_core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -157,6 +160,7 @@
     <ClInclude Include="src\editor\DragState.h" />
     <ClInclude Include="src\editor\Selection.h" />
     <ClInclude Include="src\render\Bresenham.h" />
+    <ClInclude Include="src\render\Wu.h" />
     <ClInclude Include="src\render\LineClipping.h" />
     <ClInclude Include="src\render\LineAlgorithm.h" />
     <ClInclude Include="src\platform\win32\AppState.h" />
@@ -165,6 +169,7 @@
     <ClInclude Include="src\platform\win32\GdiRenderer.h" />
     <ClInclude Include="src\platform\win32\LengthDialog.h" />
     <ClInclude Include="src\platform\win32\HelpDialog.h" />
+    <ClInclude Include="src\platform\win32\SceneFiles.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Projecr1_GK.cpp" />
@@ -172,12 +177,14 @@
     <ClCompile Include="src\editor\EditorSession.cpp" />
     <ClCompile Include="src\editor\LengthInput.cpp" />
     <ClCompile Include="src\render\Bresenham.cpp" />
+    <ClCompile Include="src\render\Wu.cpp" />
     <ClCompile Include="src\render\LineClipping.cpp" />
     <ClCompile Include="src\platform\win32\BackBuffer.cpp" />
     <ClCompile Include="src\platform\win32\DibRenderer.cpp" />
     <ClCompile Include="src\platform\win32\GdiRenderer.cpp" />
     <ClCompile Include="src\platform\win32\LengthDialog.cpp" />
     <ClCompile Include="src\platform\win32\HelpDialog.cpp" />
+    <ClCompile Include="src\platform\win32\SceneFiles.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\platform\win32\README.md" />

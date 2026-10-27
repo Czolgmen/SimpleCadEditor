@@ -1,6 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClInclude Include="src\render\Wu.h"><Filter>src\render</Filter></ClInclude>
+    <ClCompile Include="src\render\Wu.cpp"><Filter>src\render</Filter></ClCompile>
     <Filter Include="src">
       <UniqueIdentifier>{698E049C-1065-4408-A349-E5E2997A5888}</UniqueIdentifier>
     </Filter>
@@ -84,6 +86,7 @@
     <ClInclude Include="src\platform\win32\HelpDialog.h">
       <Filter>src\platform\win32</Filter>
     </ClInclude>
+    <ClInclude Include="src\platform\win32\SceneFiles.h"><Filter>src\platform\win32</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\editor\HitTester.cpp">
@@ -119,6 +122,7 @@
     <ClCompile Include="src\platform\win32\HelpDialog.cpp">
       <Filter>src\platform\win32</Filter>
     </ClCompile>
+    <ClCompile Include="src\platform\win32\SceneFiles.cpp"><Filter>src\platform\win32</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\platform\win32\README.md">

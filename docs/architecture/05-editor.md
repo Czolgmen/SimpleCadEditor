@@ -1,76 +1,33 @@
-# Edycja i obsługa wejścia
+# 05. Sesja edytora i interakcja
 
-[Spis treści](README.md)
+[Spis dokumentacji architektury](README.md)
 
-## Sesja edytora
+## Stan sesji
 
-Aktualna [`EditorSession`](../../src/editor/README.md) posiada dokument, zaznaczenie i opcjonalną transakcję z wariantem przeciągania punktu albo wielokąta. Udostępnia operacje wskaźnika w jednostkach świata, anulowanie, obsługę Esc, podział i usuwanie. Dalszy opis uwzględnia przyszłe uchwyty krzywych, solver, kamerę i zestaw poleceń.
+[`EditorSession`](../../src/editor/EditorSession.h) łączy dokument z zaznaczeniem, stanem przeciągania oraz wyborem pierwszej krawędzi relacji równoległości. Interfejs operuje na pozycjach i identyfikatorach, bez uchwytów okien Windows. [`Selection`](../../src/editor/Selection.h) i [`DragState`](../../src/editor/DragState.h) opisują bieżący wybór oraz dane gestu, w tym migawkę początkową i przesunięcie miejsca uchwycenia względem kursora.
 
-`EditorSession` łączy dokument i jego operacje z neutralnym stanem interakcji:
+## Wykrywanie elementów
 
-- `Selection`: wskazane wierzchołki, uchwyty, krawędzie, wielokąty lub ograniczenia.
-- `InteractionState`: `Idle`, `DraggingVertex`, `DraggingControlPoint`, `DraggingPolygon`.
-- `DragTransaction`: stan początkowy, punkt zaczepienia, ostatni poprawny wynik i bieżący podgląd.
-- `Viewport`: transformacja świata na widok i odwrotna.
-- `EditorSettings`: m.in. biblioteczne rysowanie odcinków lub Bresenham oraz widoczność uchwytów.
+[`HitTester.cpp`](../../src/editor/HitTester.cpp) realizuje testy w kolejności: punkty kontrolne, wierzchołki, krawędzie, wnętrza wielokątów. Najbliższa krawędź jest wybierana przez porównanie kwadratów odległości od segmentów jej łamanej. Wnętrze wyznacza ray casting z regułą parzystości. Przy nakładaniu figur test wnętrza uwzględnia kolejność przeciwną do kolejności ich rysowania.
 
-Stan interakcji można wyrazić przez `std::variant`. Nie rozdzielamy go na zestaw niezależnych flag, które pozwalałyby przypadkowo uruchomić dwa gesty jednocześnie.
+Tolerancja wskazania jest niezależna od grubości obrysu. Test krawędzi wykorzystuje przybliżenie krzywej przez wspólną funkcję `sampleEdge`.
 
-## Polecenia
+## Cykl przeciągania
 
-Planowany zestaw: `SplitEdge`, `DeleteVertex`, `SetEdgeType`, `SetContinuity`, `AddFixedLength`, `AddParallel`, `RemoveConstraint`, `ResetDemoScene` oraz operacje zaznaczania. Polecenia odnoszą się do ID, a nie kontrolek czy pozycji w menu.
+1. Naciśnięcie LPM identyfikuje element i zapisuje dokument sprzed gestu.
+2. Ruch kursora wyznacza proponowaną pozycję z zachowaniem miejsca uchwycenia.
+3. Próba ruchu wierzchołka lub uchwytu uruchamia solver na ostatnim zaakceptowanym stanie. Prowadzony punkt jest dokładnie przypięty.
+4. Poprawny wynik staje się podglądem. Nieudana próbka zachowuje poprzedni podgląd i zgłasza ostrzeżenie.
+5. Zwolnienie LPM zatwierdza ostatni poprawny stan. Esc odtwarza migawkę sprzed gestu.
 
-WinAPI pobiera wartość z dialogu długości i przekazuje gotową liczbę. Rdzeń niezależnie sprawdza, czy jest skończona i dodatnia oraz czy wskazana krawędź jest odcinkiem. Domyślna wartość dialogu to bieżąca długość wskazanego odcinka. Dla Béziera i łuku polecenie zadania długości jest niedostępne.
+Ruch uchwytu najpierw preferuje nieruchome końce jego krzywej, a następnie dopuszcza ich korektę w ramach wspólnego limitu iteracji. Przesunięcie całego wielokąta jest sztywną translacją obliczaną względem początku gestu; obejmuje również punkty kontrolne.
 
-Zaznaczenie dwóch krawędzi będących odcinkami umożliwia dodanie równoległości; mogą pochodzić z różnych wielokątów. Jeśli choć jedna jest Bézierem lub łukiem, polecenie jest niedostępne, a próba wywołania go przez API kończy się błędem walidacji. Po zmianie topologii sesja usuwa z zaznaczenia ID, które już nie istnieją.
+## Polecenia transakcyjne
 
-Obecny interfejs używa sekwencji PPM na pierwszej krawędzi → „Ustaw równoległość z...” → LPM na drugiej. Sesja przechowuje opcjonalny `pendingParallelEdge`, bez aktywnego przeciągania. Kandydat dokumentu otrzymuje parę i trafia do wspólnego solvera z początkiem pierwszej krawędzi zablokowanym. Sukces zatwierdza geometrię i relację; odrzucenie zachowuje dokument. Esc, utrata fokusu i otwarcie innego menu kończą wybór. Pomarańczowe podświetlenie oznacza pierwszą krawędź, a etykiety `P1`, `P2` itd. identyfikują pary na obu krawędziach.
+Dodawanie i usuwanie relacji, konwersje, podział oraz usuwanie wierzchołka są wykonywane na kandydacie. Zatwierdzenie obejmuje zmianę modelu i ponowne rozwiązanie pozostałych zależności. Odrzucenie nie zużywa identyfikatorów ani nie pozostawia częściowych zmian. Grubość krawędzi jest właściwością prezentacji i nie wymaga rozwiązania geometrii.
 
-Konwersja odcinka na krzywą usuwa dotyczące go relacje długości i równoległości. Opis polecenia w UI informuje o tym skutku; po udanej operacji sesja odświeża listę relacji oraz zaznaczenie ich oznaczeń. Nie dodajemy osobnego dialogu potwierdzenia.
+## Adapter WinAPI
 
-## Przepływ przeciągania
+[`WndProc`](../../Projecr1_GK.cpp) przelicza współrzędne myszy, zarządza przechwyceniem i wywołuje sesję. Podczas przeciągania kolejne ruchy zastępują oczekującą próbkę; timer przelicza najnowszą pozycję. Żądany interwał 1 ms nie jest gwarancją częstotliwości systemowej. Zwolnienie przycisku wymusza obsługę końcowej próbki. Utrata przechwycenia, fokusu lub minimalizacja anuluje gest.
 
-```mermaid
-sequenceDiagram
-    participant W as WinAPI
-    participant E as EditorSession
-    participant C as cad_core
-    participant R as Renderer i GDI
-    W->>E: pointerDown / pointerMove
-    E->>E: hit test lub aktualizacja gestu
-    E->>C: kandydat dokumentu + dokładny cel ruchu
-    C-->>E: wynik solvera i diagnostyka
-    E->>E: aktualizacja podglądu
-    W->>R: WM_PAINT: odczytaj widok i narysuj
-    W->>E: pointerUp
-    E->>C: zatwierdź ostatni poprawny wynik
-```
-
-Przy chwyceniu wierzchołka lub uchwytu zapamiętujemy różnicę między kursorem a jego środkiem, aby uniknąć skoku przy trafieniu w pobliże punktu. Dalej punkt porusza się dokładnie o ruch kursora. Przy przesuwaniu całego wielokąta translację liczymy względem miejsca rozpoczęcia gestu.
-
-`WM_LBUTTONDOWN` rozpoczyna gest i przechwycenie myszy przez `SetCapture`. `WM_LBUTTONUP` kończy gest i wywołuje `ReleaseCapture`. `WM_CAPTURECHANGED`, utrata aktywności lub `Esc` anulują niedokończony gest. Adapter nie uruchamia solvera po raz drugi podczas `WM_PAINT`.
-
-## Hit testing
-
-Priorytet trafień: uchwyt Béziera, wierzchołek, oznaczenie relacji, krawędź, wnętrze wielokąta. Widoczne punkty mają obszar trafienia określony w pikselach logicznych, przeliczany zgodnie z DPI i skalą widoku.
-
-Odległość od krzywej wyznaczamy na łamanej powstałej ze wspólnego samplera. Na początek wystarczy przegląd liniowy elementów sceny. Nie wprowadzamy drzewa przestrzennego bez potrzeby.
-
-Wnętrze samoprzecinającego się wielokąta definiujemy regułą parzystości przecięć. W obszarach nakładania wybieramy obiekt rysowany na wierzchu; zaznaczenie krawędzi daje alternatywną drogę wskazania wielokąta. Test wnętrza obejmuje próbkowane krzywe, nie tylko cięciwy.
-
-## Proponowana obsługa
-
-| Akcja | Zachowanie |
-| --- | --- |
-| LPM na punkcie lub uchwycie + ruch | Przeciąganie wskazanego elementu |
-| LPM we wnętrzu wielokąta + ruch | Przesunięcie całego wielokąta |
-| LPM na krawędzi | Zaznaczenie krawędzi |
-| PPM na krawędzi → „Ustaw równoległość z...” → LPM | Dodanie równoległości z drugą wskazaną krawędzią |
-| PPM | Menu kontekstowe operacji dopuszczalnych dla wskazanego elementu |
-| Delete | Usunięcie zaznaczonego wierzchołka albo relacji; bez kasowania całych wielokątów |
-| Esc | Anulowanie gestu; poza gestem wyczyszczenie zaznaczenia |
-| F1 | Dokumentacja i skróty |
-
-Radio buttony wybierają algorytm odcinków. Menu lub prosty panel umożliwia zmianę typu krawędzi, ciągłości i zarządzanie relacjami. Nie budujemy rozbudowanego panelu właściwości przed ukończeniem geometrii.
-
-Tworzenie nowych wielokątów w UI i pełne undo/redo są poza pierwszym zakresem: zadanie dopuszcza scenę zdefiniowaną kodem. Transakcje mają umożliwić późniejsze dodanie historii bez zmiany zasad działania rdzenia.
+Zapis i odczyt wykorzystują dialogi platformowe. Poprawne wczytanie zastępuje sesję nowym dokumentem i zeruje stan edycji; wybrana metoda renderowania pozostaje zachowana.

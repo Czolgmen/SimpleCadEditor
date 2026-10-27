@@ -3,6 +3,15 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <filesystem>
+#include <optional>
+#include <fstream>
+#include <sstream>
+
+static std::optional<std::filesystem::path> chosenScenePath;
+static bool lastSceneDialogSaving = false;
+static std::optional<int> chosenStrokeWidth;
+static int initialStrokeWidth = 0;
 
 static bool failTimerAllocation = false;
 static unsigned presentRequests = 0;
@@ -43,17 +52,37 @@ static BOOL WINAPI testSetForegroundWindow(HWND)
 #define MessageBoxW testMessageBoxW
 #define ShowWindow testShowWindow
 #define SetForegroundWindow testSetForegroundWindow
+#define askScenePath testAskScenePath
+#define askStrokeWidth testAskStrokeWidth
 #include "../../Projecr1_GK.cpp"
 #undef SetTimer
 #undef UpdateWindow
 #undef MessageBoxW
 #undef ShowWindow
 #undef SetForegroundWindow
+#undef askScenePath
+#undef askStrokeWidth
+
+namespace cad::win32
+{
+    std::optional<int> testAskStrokeWidth(HINSTANCE, HWND, int current)
+    {
+        initialStrokeWidth = current;
+        return chosenStrokeWidth;
+    }
+
+    std::optional<std::filesystem::path> testAskScenePath(HWND, bool save)
+    {
+        lastSceneDialogSaving = save;
+        return chosenScenePath;
+    }
+}
 #include "../CurveTestSupport.h"
 #include <cad_core/model/EdgeSampling.h>
 #include <cad_core/model/ContinuityJoins.h>
 #include <cad_core/constraints/ContinuityConstraint.h>
 #include <platform/win32/DibRenderer.h>
+#include <cad_core/io/SceneIO.h>
 
 #include <algorithm>
 #include <limits>
@@ -114,6 +143,170 @@ namespace
                 "Finished gesture retained scheduled work");
         }
     };
+
+    struct SceneDiskFixture
+    {
+        std::filesystem::path directory;
+        std::filesystem::path file;
+        SceneDiskFixture()
+        {
+            static unsigned serial = 0;
+            directory = std::filesystem::temp_directory_path() /
+                (L"CadSceneTests-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++serial));
+            require(std::filesystem::create_directory(directory), "Could not create isolated scene test directory");
+            file = directory / L"scena-żółć.cadscene";
+            chosenScenePath = file;
+        }
+        ~SceneDiskFixture()
+        {
+            chosenScenePath.reset();
+            std::error_code error;
+            // Remove only files created in this fixture's unique directory, without recursion.
+            for (const auto& entry : std::filesystem::directory_iterator(directory, error))
+            {
+                SetFileAttributesW(entry.path().c_str(), FILE_ATTRIBUTE_NORMAL);
+                std::filesystem::remove(entry.path(), error);
+            }
+            std::filesystem::remove(directory, error);
+        }
+    };
+
+    std::string savedText(const Document& document)
+    {
+        std::ostringstream output;
+        std::string error;
+        require(io::writeScene(output, document, error), error);
+        return output.str();
+    }
+
+    void sceneCommandsRoundTripUnicodeFileAndResetInteraction()
+    {
+        Fixture f(render::LineAlgorithm::Bresenham);
+        SceneDiskFixture disk;
+        f.state.editor = editor::EditorSession(createDemoScene());
+        const auto original = savedText(f.state.editor.document());
+        const auto beforeMessages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, IDM_SCENE_SAVE_AS, 0);
+        require(lastSceneDialogSaving && std::filesystem::exists(disk.file), "Save As did not create Unicode path");
+        auto file = win32::loadSceneFile(disk.file);
+        require(file.document.has_value(), "Saved file could not be read");
+        require(savedText(*file.document) == original, "Saved command lost data");
+        f.state.editor = editor::EditorSession{};
+        f.state.showConsistencyWarning = true;
+        SendMessageW(f.window, WM_COMMAND, IDM_SCENE_LOAD, 0);
+        require(!lastSceneDialogSaving && savedText(f.state.editor.document()) == original, "Load command did not restore scene");
+        require(!f.state.editor.selection().vertex && !f.state.editor.selection().edge &&
+            !f.state.editor.selection().polygon && !f.state.editor.selection().controlPoint &&
+            !f.state.editor.pendingParallelEdge() && !f.state.showConsistencyWarning, "Loaded scene retained stale state");
+        require(f.state.lineAlgorithm == render::LineAlgorithm::Bresenham, "Load changed view preference");
+        f.requireStopped();
+        require(messageBoxRequests == beforeMessages, "Successful file operation showed an error");
+    }
+
+    void cancelledSceneDialogsPreserveDocument()
+    {
+        Fixture f;
+        chosenScenePath.reset();
+        const auto before = savedText(f.state.editor.document());
+        const auto messages = messageBoxRequests;
+        for (const auto command : {IDM_SCENE_SAVE_AS, IDM_SCENE_LOAD})
+        {
+            SendMessageW(f.window, WM_COMMAND, command, 0);
+            require(savedText(f.state.editor.document()) == before, "Cancel changed document");
+        }
+        require(messageBoxRequests == messages, "Cancellation displayed an error");
+    }
+
+    void failedSceneLoadPreservesDocumentAndSelection()
+    {
+        Fixture f;
+        SceneDiskFixture disk;
+        require(f.state.editor.selectAt({80,40}), "Could not select control");
+        const auto before = savedText(f.state.editor.document());
+        { std::ofstream output(disk.file); output << "not a CAD scene"; }
+        const auto messages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, IDM_SCENE_LOAD, 0);
+        require(messageBoxRequests == messages + 1, "Invalid load did not report error");
+        require(savedText(f.state.editor.document()) == before && f.state.editor.selection().controlPoint == f.control,
+            "Invalid load replaced document or selection");
+        require(lastMessageBoxText.find(L"nie została zmieniona") != std::wstring::npos, "Load error did not explain preservation");
+        std::filesystem::remove(disk.file);
+        SendMessageW(f.window, WM_COMMAND, IDM_SCENE_LOAD, 0);
+        require(messageBoxRequests == messages + 2 && savedText(f.state.editor.document()) == before,
+            "Missing file was not handled");
+    }
+
+    void saveEndsGestureAndDiscardsQueuedMovement()
+    {
+        Fixture f;
+        SceneDiskFixture disk;
+        f.begin();
+        f.move({100,50});
+        f.tick();
+        const auto accepted = savedText(f.state.editor.document());
+        f.move({150,80});
+        SendMessageW(f.window, WM_COMMAND, IDM_SCENE_SAVE_AS, 0);
+        f.requireStopped();
+        require(GetCapture() != f.window, "File dialog command retained capture");
+        f.tick();
+        const auto loaded = win32::loadSceneFile(disk.file);
+        require(loaded.document && savedText(*loaded.document) == accepted && savedText(f.state.editor.document()) == accepted,
+            "Save did not keep last accepted preview or consumed queued movement");
+    }
+
+    void failedOverwritePreservesFileAndCleansTemporary()
+    {
+        SceneDiskFixture disk;
+        const auto document = createDemoScene();
+        std::wstring error;
+        require(win32::saveSceneFile(disk.file, document, error), "Could not prepare saved scene");
+        const auto before = std::filesystem::file_size(disk.file);
+        require(SetFileAttributesW(disk.file.c_str(), FILE_ATTRIBUTE_READONLY) != FALSE, "Could not set read-only attribute");
+        const bool saved = win32::saveSceneFile(disk.file, Document{}, error);
+        SetFileAttributesW(disk.file.c_str(), FILE_ATTRIBUTE_NORMAL);
+        require(!saved && !error.empty(), "Read-only destination was overwritten");
+        const auto loaded = win32::loadSceneFile(disk.file);
+        require(loaded.document && savedText(*loaded.document) == savedText(document), "Failed overwrite corrupted old file");
+        require(std::filesystem::file_size(disk.file) == before, "Failed overwrite changed file size");
+        std::size_t files = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(disk.directory)) { (void)entry; ++files; }
+        require(files == 1, "Failed save left a temporary file");
+        require(win32::saveSceneFile(disk.file, Document{}, error) && error.empty(), "Valid overwrite failed");
+        require(win32::loadSceneFile(disk.file).document->getPolygons().empty(), "Valid overwrite retained old data");
+    }
+
+    void saveFailureReportsErrorWithoutChangingScene()
+    {
+        Fixture f;
+        SceneDiskFixture disk;
+        chosenScenePath = disk.directory / L"missing-directory" / L"scene.cadscene";
+        const auto before = savedText(f.state.editor.document());
+        const auto messages = messageBoxRequests;
+        SendMessageW(f.window, WM_COMMAND, IDM_SCENE_SAVE_AS, 0);
+        require(messageBoxRequests == messages + 1 && savedText(f.state.editor.document()) == before,
+            "Save failure did not preserve scene and report error");
+    }
+
+    void fileMenuAndAcceleratorsAreEmbedded()
+    {
+        HMENU menu = LoadMenuW(hInst, MAKEINTRESOURCEW(IDC_PROJECR1GK));
+        require(menu != nullptr, "Missing application menu");
+        const auto saveState = GetMenuState(menu, IDM_SCENE_SAVE_AS, MF_BYCOMMAND);
+        const auto loadState = GetMenuState(menu, IDM_SCENE_LOAD, MF_BYCOMMAND);
+        DestroyMenu(menu);
+        require(saveState != static_cast<UINT>(-1) && loadState != static_cast<UINT>(-1), "Missing file menu entries");
+        HACCEL accelerators = LoadAcceleratorsW(hInst, MAKEINTRESOURCEW(IDC_PROJECR1GK));
+        require(accelerators != nullptr, "Missing accelerators");
+        std::vector<ACCEL> entries(CopyAcceleratorTableW(accelerators, nullptr, 0));
+        CopyAcceleratorTableW(accelerators, entries.data(), static_cast<int>(entries.size()));
+        bool save = false, load = false;
+        for (const auto& entry : entries)
+        {
+            save |= entry.cmd == IDM_SCENE_SAVE_AS && entry.key == 'S' && (entry.fVirt & (FVIRTKEY|FCONTROL|FSHIFT)) == (FVIRTKEY|FCONTROL|FSHIFT);
+            load |= entry.cmd == IDM_SCENE_LOAD && entry.key == 'O' && (entry.fVirt & (FVIRTKEY|FCONTROL)) == (FVIRTKEY|FCONTROL);
+        }
+        require(save && load, "Missing Ctrl+O or Ctrl+Shift+S");
+    }
 
     void burstUsesOnlyLatestPositionAndPresents()
     {
@@ -490,9 +683,11 @@ namespace
         Fixture f;
         const HWND gdi = GetDlgItem(f.window, IDC_LINE_GDI);
         const HWND bresenham = GetDlgItem(f.window, IDC_LINE_BRESENHAM);
-        require(gdi && bresenham &&
+        const HWND wu = GetDlgItem(f.window, IDC_LINE_WU);
+        require(gdi && bresenham && wu &&
             (GetWindowLongPtrW(gdi, GWL_STYLE) & BS_TYPEMASK) == BS_AUTORADIOBUTTON &&
-            (GetWindowLongPtrW(bresenham, GWL_STYLE) & BS_TYPEMASK) == BS_AUTORADIOBUTTON,
+            (GetWindowLongPtrW(bresenham, GWL_STYLE) & BS_TYPEMASK) == BS_AUTORADIOBUTTON &&
+            (GetWindowLongPtrW(wu, GWL_STYLE) & BS_TYPEMASK) == BS_AUTORADIOBUTTON,
             "Native algorithm radio controls missing");
         require(SendMessageW(gdi, BM_GETCHECK, 0, 0) == BST_CHECKED &&
             SendMessageW(bresenham, BM_GETCHECK, 0, 0) == BST_UNCHECKED, "Wrong default radio selection");
@@ -502,15 +697,16 @@ namespace
         const Document before = f.state.editor.document();
         f.state.showConsistencyWarning = true;
         SendMessageW(f.window, WM_KILLFOCUS, reinterpret_cast<WPARAM>(bresenham), 0);
-        for (const HWND control : {bresenham, bresenham, gdi})
+        for (const HWND control : {bresenham, wu, wu, gdi})
         {
             SendMessageW(control, BM_CLICK, 0, 0);
-            const bool useBresenham = control == bresenham;
-            require(f.state.lineAlgorithm == (useBresenham ? render::LineAlgorithm::Bresenham : render::LineAlgorithm::Gdi),
+            const auto expected = control == wu ? render::LineAlgorithm::Wu :
+                control == bresenham ? render::LineAlgorithm::Bresenham : render::LineAlgorithm::Gdi;
+            require(f.state.lineAlgorithm == expected,
                 "Radio did not change selected algorithm");
-            require(SendMessageW(control, BM_GETCHECK, 0, 0) == BST_CHECKED &&
-                SendMessageW(useBresenham ? gdi : bresenham, BM_GETCHECK, 0, 0) == BST_UNCHECKED,
-                "Radio group lost exclusive check");
+            for (const HWND radio : {gdi,bresenham,wu})
+                require(SendMessageW(radio, BM_GETCHECK, 0, 0) == (radio == control ? BST_CHECKED : BST_UNCHECKED),
+                    "Radio group lost exclusive check");
             requireSameCurveDocument(f.state.editor.document(), before);
             require(f.state.editor.selection().edge == edge && f.state.editor.pendingParallelEdge() == edge &&
                 f.state.showConsistencyWarning, "View switch changed editing state");
@@ -518,6 +714,9 @@ namespace
         Fixture initiallyBresenham{render::LineAlgorithm::Bresenham};
         require(SendMessageW(GetDlgItem(initiallyBresenham.window, IDC_LINE_BRESENHAM), BM_GETCHECK, 0, 0) == BST_CHECKED,
             "Window creation ignored initial renderer mode");
+        Fixture initiallyWu{render::LineAlgorithm::Wu};
+        require(SendMessageW(GetDlgItem(initiallyWu.window, IDC_LINE_WU), BM_GETCHECK, 0, 0) == BST_CHECKED,
+            "Window creation ignored initial Wu mode");
     }
 
     struct RenderFixture
@@ -563,7 +762,7 @@ namespace
         for (const auto vertex : f.polygon.vertices)
             require(f.document.setContinuity(vertex, Continuity::G0), "Renderer G0 fixture failed");
         require(f.document.convertEdgeToArc(f.polygon.edges[1]), "Renderer arc fixture failed");
-        for (const auto algorithm : {render::LineAlgorithm::Gdi, render::LineAlgorithm::Bresenham})
+        for (const auto algorithm : {render::LineAlgorithm::Gdi, render::LineAlgorithm::Bresenham, render::LineAlgorithm::Wu})
         {
             f.draw(algorithm);
             // Analytic midpoint of the cubic, rightmost point of the semicircle,
@@ -643,6 +842,246 @@ namespace
         require(scene.pixel(150, 38) == 0x00FFFFFF && scene.pixel(150, 39) == 0x00FFFFFF &&
             scene.pixel(150, 40) == 0x000078D7 && scene.pixel(150, 41) == 0x000078D7,
             "Renderer brush overwrote reserved toolbar area");
+    }
+
+    void edgeWidthCommandChangesOnlySelectedEdgeAndHandlesCancel()
+    {
+        Fixture f;
+        const auto polygon = f.state.editor.document().getPolygons().begin()->second;
+        const auto edge = polygon.edges[1];
+        require(f.state.editor.selectAt(edgeMiddle(f.state.editor.document(),edge),0), "Width selection failed");
+        const Document before = f.state.editor.document();
+        chosenStrokeWidth = 9;
+        const auto messages = messageBoxRequests;
+        SendMessageW(f.window,WM_COMMAND,IDM_SET_EDGE_WIDTH,0);
+        require(initialStrokeWidth == 2 && f.state.editor.document().findEdge(edge)->strokeWidth == 9,
+            "Width command did not use current value or update selected edge");
+        for (const auto other : polygon.edges)
+            require(f.state.editor.document().findEdge(other)->strokeWidth == (other == edge ? 9 : 2), "Width command changed another edge");
+        requireSameCurveDocument(f.state.editor.document(),before);
+        chosenStrokeWidth.reset();
+        SendMessageW(f.window,WM_COMMAND,IDM_SET_EDGE_WIDTH,0);
+        require(initialStrokeWidth == 9 && f.state.editor.document().findEdge(edge)->strokeWidth == 9 && messageBoxRequests == messages,
+            "Cancelled width dialog changed state or reported error");
+        chosenStrokeWidth = 33;
+        SendMessageW(f.window,WM_COMMAND,IDM_SET_EDGE_WIDTH,0);
+        require(f.state.editor.document().findEdge(edge)->strokeWidth == 9 && messageBoxRequests == messages+1,
+            "Invalid width was accepted or not reported");
+        chosenStrokeWidth.reset();
+    }
+
+    void widthMenuSupportsAllGeometriesAndDialogResourceExists()
+    {
+        require(FindResourceW(hInst,MAKEINTRESOURCEW(IDD_EDGE_WIDTH),RT_DIALOG) != nullptr, "Missing width dialog resource");
+        for (int kind = 0; kind < 3; ++kind)
+        {
+            Document document;
+            const std::array points{Vec2{0,0},Vec2{100,0},Vec2{100,100},Vec2{0,100}};
+            const auto polygon = *document.findPolygon(document.addPolygon(points));
+            if (kind == 1) require(document.convertEdgeToBezier(polygon.edges[0]), "Width menu Bezier failed");
+            if (kind == 2) require(document.convertEdgeToArc(polygon.edges[0]), "Width menu arc failed");
+            const auto* edge = document.findEdge(polygon.edges[0]);
+            const auto samples = sampleEdge(edge->geometry,document.findVertex(edge->start)->position,document.findVertex(edge->end)->position);
+            editor::EditorSession editor(document);
+            const Vec2 click = kind == 0 ? Vec2{50,0} : samples[samples.size()/2];
+            require(editor.selectAt(click,0) && editor.selection().edge == edge->id, "Width menu edge selection failed");
+            HMENU menu = CreatePopupMenu();
+            const bool added = appendStrokeWidthMenu(menu,editor);
+            const auto state = GetMenuState(menu,IDM_SET_EDGE_WIDTH,MF_BYCOMMAND);
+            DestroyMenu(menu);
+            require(added && state != static_cast<UINT>(-1) && !(state & (MF_GRAYED|MF_DISABLED)), "Width disabled for a geometry kind");
+        }
+        HMENU menu = CreatePopupMenu();
+        editor::EditorSession empty;
+        const bool added = appendStrokeWidthMenu(menu,empty);
+        const auto state = GetMenuState(menu,IDM_SET_EDGE_WIDTH,MF_BYCOMMAND);
+        DestroyMenu(menu);
+        require(added && (state & MF_GRAYED), "Width menu enabled without edge selection");
+    }
+
+    void perEdgeWidthsRenderInAllModesAndHighlightRelatively()
+    {
+        RenderFixture f;
+        const auto edge = f.polygon.edges[2];
+        require(f.document.setEdgeStrokeWidth(edge,10), "Renderer width setup failed");
+        for (const auto mode : {render::LineAlgorithm::Gdi,render::LineAlgorithm::Bresenham,render::LineAlgorithm::Wu})
+        {
+            f.draw(mode);
+            require(f.pixel(150,36) == 0 && f.pixel(150,40) == 0 && f.pixel(150,32) == 0x00FFFFFF,
+                "Configured width not used in a renderer");
+            require(f.pixel(60,110) == 0 && f.pixel(64,110) == 0x00FFFFFF,
+                "Per-edge width changed a neighbouring edge");
+            f.draw(mode,edge);
+            require(f.pixel(150,35) == 0x000078D7 && f.pixel(150,40) == 0x000078D7,
+                "Highlight did not add two pixels to the configured width");
+            require(f.document.findEdge(edge)->strokeWidth == 10, "Rendering modified persistent width");
+        }
+    }
+
+    void wuBlendsWithExistingDibColor()
+    {
+        DibFixture f;
+        win32::WuScratch scratch;
+        std::fill_n(f.buffer.pixels(),48,0x00204060);
+        const std::array points{Vec2{0,2.25},Vec2{7,2.25}};
+        win32::drawWuPolyline(f.buffer,points,0x00A0C0E0,scratch);
+        require(f.buffer.pixels()[2*8+3] == 0x0080A0C0 && f.buffer.pixels()[3*8+3] == 0x00406080,
+            "Wu did not blend RGB against actual background with .75/.25 coverage");
+        require(f.buffer.pixels()[3] == 0x00204060, "Wu changed pixels outside footprint");
+        require(GetPixel(f.buffer.dc(),3,2) == RGB(128,160,192), "Wu swapped DIB color channels");
+        GdiFlush();
+    }
+
+    void wuPolylineJoinsMatchUnsplitHorizontal()
+    {
+        DibFixture f;
+        win32::WuScratch scratch;
+        const std::array straight{Vec2{0,2.25},Vec2{7,2.25}};
+        win32::drawWuPolyline(f.buffer,straight,0,scratch,2);
+        const std::vector<std::uint32_t> reference(f.buffer.pixels(),f.buffer.pixels()+48);
+        std::fill_n(f.buffer.pixels(),48,DibFixture::background);
+        std::vector<Vec2> sampled;
+        for (int i = 0; i <= 56; ++i) sampled.push_back({i*0.125,2.25});
+        sampled.insert(sampled.begin()+20,sampled[20]);
+        win32::drawWuPolyline(f.buffer,sampled,0,scratch,2);
+        require(std::equal(reference.begin(),reference.end(),f.buffer.pixels()),
+            "Polyline seams changed brightness or duplicate vertices made dots");
+    }
+
+    void wuThickStrokesBlendAndStayInsideClip()
+    {
+        DibFixture f;
+        win32::WuScratch scratch;
+        const RECT clip{2,1,6,5};
+        const std::array points{Vec2{-1e12,2.25},Vec2{1e12,2.25}};
+        win32::drawWuPolyline(f.buffer,points,0x000078D7,scratch,4,&clip);
+        for (int y = 0; y < 6; ++y)
+        for (int x = 0; x < 8; ++x)
+            if (x < 2 || x >= 6 || y < 1 || y >= 5)
+                require(f.buffer.pixels()[y*8+x] == DibFixture::background, "Wu stroke escaped clip rectangle");
+        require(f.buffer.pixels()[2*8+3] == 0x000078D7, "Thick Wu stroke has no opaque selected core");
+        const auto border = f.buffer.pixels()[4*8+3];
+        require(border != DibFixture::background && border != 0x000078D7, "Thick Wu boundary was not antialiased");
+    }
+
+    void wuRejectsBadInputAndHandlesBufferResize()
+    {
+        DibFixture f;
+        win32::WuScratch scratch;
+        const std::array points{Vec2{0,1},Vec2{7,4}};
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const std::array bad{Vec2{0,1},Vec2{3,2},Vec2{nan,4}};
+        const std::array invisible{Vec2{-100,-100},Vec2{-50,-50}};
+        for (const int width : {0,-1,(std::numeric_limits<int>::max)()})
+            win32::drawWuPolyline(f.buffer,points,0,scratch,width);
+        win32::drawWuPolyline(f.buffer,bad,0,scratch);
+        win32::drawWuPolyline(f.buffer,invisible,0,scratch);
+        const RECT empty{3,3,3,5};
+        win32::drawWuPolyline(f.buffer,points,0,scratch,4,&empty);
+        require(std::all_of(f.buffer.pixels(),f.buffer.pixels()+48,
+            [](std::uint32_t p) { return p == DibFixture::background; }), "Rejected Wu line changed pixels");
+        win32::drawWuPolyline(f.buffer,points,0,scratch);
+        f.buffer.reset();
+        win32::drawWuPolyline(f.buffer,points,0,scratch);
+        const HDC reference = GetDC(nullptr);
+        const bool resized = f.buffer.resize(reference,1,1);
+        ReleaseDC(nullptr,reference);
+        require(resized, "Could not create single-pixel Wu buffer");
+        f.buffer.pixels()[0] = DibFixture::background;
+        const std::array dot{Vec2{0,0},Vec2{0,0}};
+        win32::drawWuPolyline(f.buffer,dot,0x00123456,scratch);
+        require(f.buffer.pixels()[0] == 0x00123456, "Zero-length Wu dot or scratch resize failed");
+    }
+
+    void wuRendererPreservesSelectionAndFallsBackToGdi()
+    {
+        RenderFixture f;
+        const auto edge = f.polygon.edges[2];
+        f.draw(render::LineAlgorithm::Wu);
+        require(f.pixel(150,40) == 0 && f.pixel(150,39) != 0 && f.pixel(150,39) != 0x00FFFFFF &&
+            f.pixel(150,38) == 0x00FFFFFF, "Normal Wu width has no AA boundary");
+        f.draw(render::LineAlgorithm::Wu,edge);
+        require(f.pixel(150,40) == 0x000078D7 && f.pixel(150,39) == 0x000078D7 &&
+            f.pixel(150,38) != 0x000078D7 && f.pixel(150,38) != 0x00FFFFFF, "Selected Wu width/color wrong");
+        f.draw(render::LineAlgorithm::Wu,edge,edge);
+        require(f.pixel(150,40) == 0x00DC7800, "Wu lost pending parallel color");
+        f.draw(render::LineAlgorithm::Gdi,edge);
+        const std::vector<std::uint32_t> reference(f.buffer.pixels(),f.buffer.pixels()+320*240);
+        f.draw(render::LineAlgorithm::Wu,edge,{},false);
+        require(std::equal(reference.begin(),reference.end(),f.buffer.pixels()), "Wu without DIB did not fall back to GDI");
+    }
+
+    void wuWindowPaintKeepsModeAndAaAfterResize()
+    {
+        Fixture f;
+        Document document;
+        const std::array points{Vec2{40,40},Vec2{220,40},Vec2{220,180},Vec2{40,180}};
+        const auto polygon = *document.findPolygon(document.addPolygon(points));
+        f.state.editor = editor::EditorSession(document);
+        require(f.state.editor.selectAt({130,40},0) && f.state.editor.selection().edge == polygon.edges[0], "Wu paint selection failed");
+        SendMessageW(GetDlgItem(f.window,IDC_LINE_WU),BM_CLICK,0,0);
+        for (const bool resize : {false,true})
+        {
+            if (resize) require(SetWindowPos(f.window,nullptr,0,0,410,310,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE), "Wu resize failed");
+            SendMessageW(f.window,WM_PAINT,0,0);
+            GdiFlush();
+            auto& buffer = f.state.backBuffer;
+            const int row = buffer.height()-60;
+            const auto core = buffer.pixels()[row*buffer.width()+150] & 0x00FFFFFF;
+            const auto fringe = buffer.pixels()[(row-2)*buffer.width()+150] & 0x00FFFFFF;
+            require(core == 0x000078D7 && fringe != core && fringe != 0x00FFFFFF, "WM_PAINT missed Wu coverage");
+            require(f.state.lineAlgorithm == render::LineAlgorithm::Wu, "Resize reset Wu mode");
+        }
+        requireSameCurveDocument(f.state.editor.document(),document);
+    }
+
+    void wuToolbarClipBoundsAntialiasedFringe()
+    {
+        RenderFixture f;
+        const RECT canvas{0,40,320,240};
+        FillRect(f.buffer.dc(),&f.rect,static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+        win32::drawDocument(f.buffer.dc(),f.document,canvas,{},{},f.polygon.edges[2],{},{},render::LineAlgorithm::Wu,&f.buffer);
+        GdiFlush();
+        require(f.pixel(150,38) == 0x00FFFFFF && f.pixel(150,39) == 0x00FFFFFF && f.pixel(150,40) == 0x000078D7,
+            "Wu AA fringe overwrote toolbar or clipped away visible stroke");
+    }
+
+    void wuWideCircleHasUniformThicknessAcrossOctants()
+    {
+        RenderFixture f;
+        win32::WuScratch scratch;
+        std::vector<Vec2> circle;
+        constexpr double pi = 3.14159265358979323846;
+        for (int i = 0; i <= 256; ++i)
+        {
+            const double angle = 2*pi*i/256;
+            circle.push_back({160+70*std::cos(angle),120+70*std::sin(angle)});
+        }
+        FillRect(f.buffer.dc(),&f.rect,static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+        GdiFlush();
+        win32::drawWuPolyline(f.buffer,circle,0,scratch,16);
+        for (int y = 40; y <= 200; ++y)
+        for (int x = 80; x <= 240; ++x)
+        {
+            const double distance = std::abs(std::hypot(x-160.0,y-120.0)-70.0);
+            const double alpha = std::clamp(8.5-distance,0.0,1.0);
+            const int reference = static_cast<int>(std::lround(255*(1-alpha)));
+            const int actual = static_cast<int>(f.pixel(x,y)&255u);
+            require(std::abs(actual-reference) <= 3, "Wide circular stroke changes thickness or has octant seams");
+        }
+    }
+
+    void wuScratchDoesNotRepaintPreviousEdges()
+    {
+        DibFixture f;
+        win32::WuScratch scratch;
+        const std::array first{Vec2{0,1.25},Vec2{7,1.25}}, second{Vec2{0,4.25},Vec2{7,4.25}};
+        win32::drawWuPolyline(f.buffer,first,0x000078D7,scratch);
+        const std::vector<std::uint32_t> before(f.buffer.pixels(),f.buffer.pixels()+48);
+        win32::drawWuPolyline(f.buffer,second,0x00DC7800,scratch);
+        for (int i = 0; i < 3*8; ++i) require(f.buffer.pixels()[i] == before[i], "Reused Wu mask repainted previous edge");
+        require(f.buffer.pixels()[4*8+3] != DibFixture::background && f.buffer.pixels()[4*8+3] != 0x00DC7800,
+            "New Wu stroke lost its independent coverage");
     }
 
     void windowPaintUsesSelectedAlgorithmAfterResize()
@@ -920,6 +1359,25 @@ int main()
     if (!RegisterClassW(&klass))
         return 1;
     const std::array tests{
+        cad::tests::TestCase{"edge width command selection cancellation and errors",edgeWidthCommandChangesOnlySelectedEdgeAndHandlesCancel},
+        cad::tests::TestCase{"width menu supports curves and has dialog resource",widthMenuSupportsAllGeometriesAndDialogResourceExists},
+        cad::tests::TestCase{"individual widths render in all modes",perEdgeWidthsRenderInAllModesAndHighlightRelatively},
+        cad::tests::TestCase{"Wu blends with existing DIB RGB",wuBlendsWithExistingDibColor},
+        cad::tests::TestCase{"Wu polyline joins match an unsplit line",wuPolylineJoinsMatchUnsplitHorizontal},
+        cad::tests::TestCase{"Wu thick strokes blend and stay clipped",wuThickStrokesBlendAndStayInsideClip},
+        cad::tests::TestCase{"Wu rejects bad input and handles resize",wuRejectsBadInputAndHandlesBufferResize},
+        cad::tests::TestCase{"Wu selection color widths and GDI fallback",wuRendererPreservesSelectionAndFallsBackToGdi},
+        cad::tests::TestCase{"Wu paint retains AA after resize",wuWindowPaintKeepsModeAndAaAfterResize},
+        cad::tests::TestCase{"Wu AA fringe respects toolbar clip",wuToolbarClipBoundsAntialiasedFringe},
+        cad::tests::TestCase{"Wu scratch does not repaint previous edges",wuScratchDoesNotRepaintPreviousEdges},
+        cad::tests::TestCase{"wide Wu circle stays uniform across octants",wuWideCircleHasUniformThicknessAcrossOctants},
+        cad::tests::TestCase{"scene commands round trip Unicode file and reset state", sceneCommandsRoundTripUnicodeFileAndResetInteraction},
+        cad::tests::TestCase{"cancelled scene dialogs preserve document", cancelledSceneDialogsPreserveDocument},
+        cad::tests::TestCase{"failed scene load preserves document and selection", failedSceneLoadPreservesDocumentAndSelection},
+        cad::tests::TestCase{"save ends gesture and discards queued movement", saveEndsGestureAndDiscardsQueuedMovement},
+        cad::tests::TestCase{"failed overwrite preserves file and cleans temporary", failedOverwritePreservesFileAndCleansTemporary},
+        cad::tests::TestCase{"save failure reports error and preserves scene", saveFailureReportsErrorWithoutChangingScene},
+        cad::tests::TestCase{"file menu and accelerators are embedded", fileMenuAndAcceleratorsAreEmbedded},
         cad::tests::TestCase{"documentation button and menu open the same window", documentationButtonAndMenuOpenTheSameWindow},
         cad::tests::TestCase{"embedded documentation has formatted algorithms model and solver", embeddedDocumentationHasFormattedAlgorithmsModelAndSolver},
         cad::tests::TestCase{"documentation and help have independent lifetimes", documentationAndHelpHaveIndependentLifetimes},

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClInclude Include="..\src\render\Wu.h"><Filter>render</Filter></ClInclude>
+    <ClCompile Include="..\src\render\Wu.cpp"><Filter>render</Filter></ClCompile>
+    <ClCompile Include="render\WuTests.cpp"><Filter>render</Filter></ClCompile>
     <Filter Include="solver">
       <UniqueIdentifier>{B8B63631-8776-4CAC-9607-4D4549B522D2}</UniqueIdentifier>
     </Filter>
@@ -22,6 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TestsMain.cpp" />
+    <ClCompile Include="core\SceneIOTests.cpp"><Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\EdgeStyleTests.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="solver\DenseLinearAlgebraTests.cpp">
       <Filter>solver</Filter>
     </ClCompile>

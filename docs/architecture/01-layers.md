@@ -1,67 +1,31 @@
-# Warstwy i zależności
+# 01. Warstwy i zależności
 
-[Spis treści](README.md)
+[Spis dokumentacji architektury](README.md)
 
-## Proponowany podział
+## Podział odpowiedzialności
 
-```mermaid
-flowchart TD
-    W[win32_app: okno, komunikaty, dialogi] --> E[cad_editor: operacje, zaznaczenie, gesty]
-    W --> G[gdi_backend: rysowanie, bufor DIB]
-    W --> R[cad_render: przygotowanie klatki]
-    R --> E
-    R --> C[cad_core: model, geometria, solver]
-    E --> C
-    G --> R
-```
-
-Strzałka oznacza zależność kodu. `cad_core` nie zależy od żadnej pozostałej warstwy. `cad_editor` nie zależy od renderera. `cad_render` odczytuje niemodyfikowalny widok stanu edytora.
-
-| Moduł | Odpowiedzialność | Czego nie powinien znać |
+| Warstwa | Lokalizacja | Odpowiedzialność |
 | --- | --- | --- |
-| `cad_core` | Model dokumentu, topologia, geometria, relacje, solver, scena demonstracyjna | Windows, GDI, mysz, menu, piksele ekranu |
-| `cad_editor` | Polecenia edycji, zaznaczenie, przeciąganie, hit testing, kamera, podgląd zmian | `HWND`, `HDC`, komunikaty `WM_*` |
-| `cad_render` | Zamiana widoku sceny na prymitywy, Bresenham, oznaczenia i style | Uchwyty Windows i modyfikowanie dokumentu |
-| `gdi_backend` | Wykonanie poleceń rysowania, zasoby GDI, bufor obrazu | Solver, reguły ciągłości, zmiany topologii |
-| `win32_app` | Uruchomienie, okna, menu, kontrolki, dialogi, integracja modułów | Własne implementacje relacji geometrycznych |
+| Rdzeń | `cad_core/` | Geometria, dokument, walidacja, ograniczenia, solver, serializacja i scena demonstracyjna |
+| Edytor | `src/editor/` | Zaznaczenie, wykrywanie wskazanych elementów, przeciąganie i transakcyjne polecenia |
+| Rasteryzacja | `src/render/` | Przycinanie odcinków oraz wyznaczanie pikseli Bresenhama i Wu bez zależności od Windows |
+| Adapter Windows | `src/platform/win32/`, `Projecr1_GK.cpp` | Obsługa komunikatów, dialogi, GDI, DIB, prezentacja i pliki |
 
-## Granice API
+Rdzeń nie korzysta z WinAPI. Edytor zależy od publicznego interfejsu rdzenia, a algorytmy rasteryzacji operują na współrzędnych i danych pikseli. Adapter Windows łączy te części. Zależności nie prowadzą z rdzenia do interfejsu.
 
-Obecna implementacja sesji jest w [`src/editor`](../../src/editor/README.md). Przyjmuje pozycje i tolerancję w jednostkach świata, obsługuje zaznaczenie, gesty, Esc i dwa polecenia topologii. Jest kompilowana w aplikacji i testach bez zależności od Windows; osobna biblioteka `cad_editor` oraz opisane niżej `PointerEvent`, `EditCommand` i `EditorView` pozostają docelowymi rozszerzeniami.
-
-Rdzeń udostępnia dane geometryczne i wyniki operacji, np. `Document`, `Vec2`, `EdgeId`, `SolveResult`. Nie przyjmuje `POINT`, `RECT`, `COLORREF` ani struktur komunikatów systemowych. Nagłówka `framework.h` używamy wyłącznie w kodzie Windows.
-
-Edytor udostępnia mały zestaw operacji:
-
-```cpp
-class EditorSession {
-public:
-    void pointerDown(const PointerEvent& event);
-    void pointerMove(const PointerEvent& event);
-    void pointerUp(const PointerEvent& event);
-    void cancelInteraction();
-    EditResult execute(const EditCommand& command);
-    EditorView view() const;
-};
+```text
+WinAPI / AppState
+    ├── EditorSession → Document → geometria i solver
+    ├── GdiRenderer / DibRenderer → Document i sampleEdge
+    └── SceneFiles → SceneIO → Document
 ```
-
-To szkic kontraktu, a nie gotowa deklaracja do skopiowania. `PointerEvent` zawiera pozycję w obszarze widoku, przycisk i modyfikatory. `EditCommand` jest zamkniętym zestawem operacji, np. `std::variant`; nie wymaga klasy bazowej dla każdego polecenia. `EditorView` zawiera tylko dane do odczytu, ważne do następnej mutacji sesji.
-
-Wynik operacji zawiera status, identyfikatory problematycznych relacji i kod diagnostyczny. Teksty interfejsu są dobierane poza rdzeniem. Nie zakładamy, że diagnostyka solvera wyznaczy najmniejszy możliwy zbiór sprzecznych relacji.
-
-## Podłączenie innego frontendu
-
-Frontend Qt, SDL lub inny program natywny:
-
-1. Tworzy `EditorSession` i przekazuje neutralne zdarzenia oraz polecenia.
-2. Odczytuje `EditorView`.
-3. Używa `cad_render` i własnego backendu albo sam rysuje odczytaną geometrię.
-4. Pokazuje błędy i dialogi w swoim zestawie kontrolek.
-
-Podmiana frontendu wymaga adaptera wejścia i rysowania, ale nie zmienia modelu, solvera ani zasad edycji. Port do przeglądarki wymaga dodatkowo kompilacji np. do WebAssembly i warstwy integracji; nie jest automatyczną konsekwencją tego podziału.
 
 ## Własność i czas życia
 
-`AppState` posiada `EditorSession`, backend GDI i ustawienia okna. Sesja posiada dokument, stan interakcji i transakcję bieżącej edycji. Dokument posiada wszystkie encje i relacje. Odwołania między encjami używają identyfikatorów, nie wskaźników.
+[`AppState`](../../src/platform/win32/AppState.h) posiada sesję edytora, bufor obrazu, wybraną metodę renderowania i stan adaptera okna. [`EditorSession`](../../src/editor/EditorSession.h) posiada dokument, zaznaczenie i stan gestu. [`Document`](../../cad_core/include/cad_core/model/Document.h) posiada encje oraz ograniczenia; odwołania między encjami wykorzystują identyfikatory.
 
-Na początek wszystko działa w jednym wątku. Obliczenia nie odbywają się w `WM_PAINT`: malowanie odczytuje gotowy stan. Nie wprowadzamy kontenera DI, magistrali zdarzeń ani wielowątkowego harmonogramu.
+Program działa w jednym wątku. Zdarzenie wejściowe inicjuje zmianę stanu; solver kończy obliczenia przed publikacją poprawnego dokumentu. `WM_PAINT` odczytuje gotowy stan i nie uruchamia solvera.
+
+## Możliwość wymiany interfejsu
+
+Nowy interfejs powinien przekazywać do sesji zdarzenia wskaźnika we współrzędnych świata, realizować dialogi i wyświetlać dokument. Model, reguły edycji, format sceny i obliczenia numeryczne pozostają wspólne. Obecna implementacja GDI/DIB wymaga zastąpienia kodem właściwym dla docelowej platformy; projekt nie zawiera gotowego drugiego interfejsu.

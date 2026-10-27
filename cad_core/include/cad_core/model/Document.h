@@ -20,9 +20,11 @@
 
 namespace cad
 {
+    namespace io { class SceneArchive; }
     // Document: wlasciciel wierzcholkow, krawedzi i wielokatow.
     class Document
     {
+        friend class io::SceneArchive;
     private:
         std::map<VertexId, Vertex> vertices;
         std::map<PolygonId, Polygon> polygons;
@@ -44,6 +46,7 @@ namespace cad
         std::vector<ValidationIssue> validate() const;
         bool moveVertex(VertexId id, const Vec2& position);
         bool movePolygon(PolygonId id, const Vec2& delta);
+        bool setEdgeStrokeWidth(EdgeId id, int width); // Integer screen pixels, 1..32.
         // Keeps the original edge ID for start -> midpoint; returns the new vertex ID.
         // Segments split at their midpoint; Beziers at t=0.5 with shape preserved.
         // Arcs become two segments through their t=0.5 point (shape changes).

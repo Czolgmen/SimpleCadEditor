@@ -12,7 +12,8 @@ namespace cad {
         InvalidEdgeConnection,
         NonFinitePosition,
         InvalidArcGeometry,
-        InvalidArcContinuity
+        InvalidArcContinuity,
+        InvalidStrokeWidth
     };
 
     struct ValidationIssue

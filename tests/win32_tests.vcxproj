@@ -35,7 +35,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -52,10 +52,12 @@
     <ClCompile Include="..\src\platform\win32\BackBuffer.cpp" />
     <ClCompile Include="..\src\platform\win32\DibRenderer.cpp" />
     <ClCompile Include="..\src\render\Bresenham.cpp" />
+    <ClCompile Include="..\src\render\Wu.cpp" />
     <ClCompile Include="..\src\render\LineClipping.cpp" />
     <ClCompile Include="..\src\platform\win32\GdiRenderer.cpp" />
     <ClCompile Include="..\src\platform\win32\LengthDialog.cpp" />
     <ClCompile Include="..\src\platform\win32\HelpDialog.cpp" />
+    <ClCompile Include="..\src\platform\win32\SceneFiles.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\Projecr1_GK.rc" />

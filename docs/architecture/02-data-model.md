@@ -1,78 +1,34 @@
-# Model danych
+# 02. Model danych
 
-[Spis treści](README.md)
+[Spis dokumentacji architektury](README.md)
 
-## Współrzędne i identyfikatory
+## Geometria i identyfikatory
 
-Geometria używa `Vec2 { double x, y; }` we współrzędnych świata. Kamera odpowiada za przeliczenie na ekran, skalę, przesunięcie i odwrócenie osi Y. Zaokrąglenie do piksela następuje dopiero podczas rasteryzacji. Początkowo jedna jednostka świata odpowiada jednemu pikselowi przy skali 100%.
+Położenie jest reprezentowane przez `Vec2` z dwiema współrzędnymi typu `double`. Model używa układu świata z osią Y skierowaną w górę. Adapter widoku odwraca oś Y i uwzględnia margines; obecnie jedna jednostka świata odpowiada jednemu pikselowi. Konwersja na całkowite współrzędne następuje w warstwie renderowania.
 
-Każdy wielokąt, wierzchołek, krawędź i ograniczenie ma własny typ ID oparty np. na `uint64_t`. Identyfikator nie jest indeksem w `vector` i nie zmienia się po usunięciu innego elementu. W obrębie dokumentu identyfikatory nie są ponownie wykorzystywane.
+[`Id.h`](../../cad_core/include/cad_core/model/Id.h) definiuje odrębne typy `VertexId`, `EdgeId` i `PolygonId`, oparte na liczbach 64-bitowych. Zero oznacza identyfikator nieprawidłowy. Identyfikatory są stabilne, nie są indeksami kontenerów i nie są ponownie używane po usunięciu elementu. Relacje długości i równoległości wskazują krawędzie przez ich ID.
 
-## Encje
+## Encje i kontenery
 
-```cpp
-struct Vertex {
-    VertexId id;
-    Vec2 position;
-    ContinuitySetting continuity;
-};
+| Typ | Przechowywane informacje |
+| --- | --- |
+| `Vertex` | ID, położenie, klasa ciągłości i źródło ustawienia `Default/Explicit` |
+| `Edge` | ID, ID początku i końca, wariant geometrii oraz `strokeWidth` |
+| `Polygon` | ID i uporządkowane listy identyfikatorów wierzchołków oraz krawędzi |
+| `Document` | Mapy encji, listy ograniczeń i liczniki kolejnych identyfikatorów |
 
-struct LineSegment {};
-struct CubicBezier { Vec2 control1, control2; };
-struct CircularArc { double bulge; };
+`EdgeGeometry` jest wariantem `LineSegment`, `CubicBezier` albo `CircularArc`. Odcinek nie wymaga dodatkowych parametrów. Bézier przechowuje dwa punkty kontrolne, a łuk parametr `bulge`. Końce wszystkich geometrii są wspólnymi wierzchołkami dokumentu. Grubość krawędzi wynosi od 1 do 32 px i nie uczestniczy w obliczeniach ograniczeń.
 
-using EdgeGeometry = std::variant<LineSegment, CubicBezier, CircularArc>;
+Kontenery encji mają postać `std::map<Id, Entity>`, a ograniczenia są przechowywane w wektorach. Publiczny interfejs dokumentu udostępnia odczyt danych oraz kontrolowane operacje modyfikujące.
 
-struct Edge {
-    EdgeId id;
-    VertexId start;
-    VertexId end;
-    EdgeGeometry geometry;
-};
+## Niezmienniki topologii
 
-struct Polygon {
-    PolygonId id;
-    std::vector<VertexId> vertices;
-    std::vector<EdgeId> edges;
-};
-```
+Wielokąt ma co najmniej trzy wierzchołki i tyle samo krawędzi. Krawędź na pozycji `i` łączy wierzchołek `i` z następnym, z zamknięciem cyklu. Odwołania muszą istnieć i mieć zgodne identyfikatory. Pełna kontrola sceny przy odczycie sprawdza również wyłączną przynależność elementów do obrysów i brak obiektów osieroconych.
 
-`Document` posiada rejestry encji i rejestr ograniczeń. Wielokąt przechowuje kolejność identyfikatorów; dane wierzchołków i krawędzi istnieją tylko w jednym miejscu. Wyjściowo różne wielokąty nie współdzielą wierzchołków. Relacje mogą łączyć ich krawędzie.
+Walidacja obejmuje skończoność współrzędnych, parametry łuków, dopuszczalne ustawienia ciągłości oraz poprawność relacji. Samoprzecięcie obrysu jest dopuszczalne; wnętrze do zaznaczania wyznacza reguła parzystości.
 
-Wielokąt o `n` wierzchołkach ma `n` krawędzi. Krawędź `edges[i]` prowadzi od `vertices[i]` do `vertices[(i+1)%n]`. Wymagamy co najmniej trzech wierzchołków, ale dopuszczamy przecięcia krawędzi. Przecięcie nie tworzy nowego wierzchołka ani dodatkowej relacji.
+## Operacje i trwałość danych
 
-Punkty kontrolne należą do segmentu Béziera; nie są wierzchołkami topologicznymi. Wskazuje się je przez `(EdgeId, ControlPointIndex)`. Końce odcinka, Béziera i łuku zawsze pochodzą z powiązanych wierzchołków, co zapewnia G0 bez dodatkowego równania.
+[`Document.cpp`](../../cad_core/src/model/Document.cpp) realizuje dodawanie, przesuwanie, konwersję, podział i usuwanie elementów oraz zmianę ograniczeń. Sesja edytora łączy operację modelu z rozwiązaniem zależności i zatwierdzeniem wyniku.
 
-`ContinuitySetting` zawiera klasę `G0/G1/C1` i pochodzenie `Default/Explicit`. Pozwala to odróżnić ustawienie automatyczne od decyzji użytkownika. Szczegóły propagacji i konwersji opisuje [dokument o krzywych](04-curves.md).
-
-## Ograniczenia
-
-```cpp
-struct FixedLength { EdgeId edge; double length; };
-struct Parallel { EdgeId first, second; };
-using ConstraintData = std::variant<FixedLength, Parallel>;
-
-struct Constraint {
-    ConstraintId id;
-    ConstraintData data;
-};
-```
-
-Jedna krawędź będąca odcinkiem może występować w wielu różnych ograniczeniach. Duplikat tej samej relacji odrzucamy, natomiast nowa relacja o innym znaczeniu przechodzi przez solver. Ciągłość jest zapisana przy wierzchołku, a jej równania są generowane razem z ograniczeniami odcinków.
-
-Zgodnie z ustaleniem użytkownika `FixedLength` może wskazywać wyłącznie `LineSegment`, a oba końce relacji `Parallel` muszą wskazywać odcinki. Béziery i łuki nie mają ograniczeń długości ani równoległości, również na swoich cięciwach. Zachowują wymagane ustawienia ciągłości w wierzchołkach.
-
-## Zmiany topologii i integralność
-
-Wszystkie zmiany przechodzą przez operacje dokumentu. Warstwa UI nie dopisuje samodzielnie elementów do kontenerów.
-
-- Podział usuwa starą krawędź i jej ograniczenia. Tworzy nowy wierzchołek oraz dwie nowe krawędzie z nowymi ID.
-- Usunięcie wierzchołka usuwa obie jego krawędzie incydentne i relacje, które ich dotyczą. Powstaje jedna nowa krawędź. Usunięcie wierzchołka trójkąta jest odrzucane.
-- Relacja między wielokątami znika w całości, jeżeli znika jedna z jej krawędzi. Druga krawędź zachowuje pozostałe relacje.
-- Ocalałe krawędzie zachowują ID. Sprawdzamy ich nowe sąsiedztwo i ciągłość wierzchołków; nie przepinamy relacji na arbitralnie wybrany fragment usuniętej krawędzi.
-- Zmiana typu istniejącej krawędzi zachowuje ID. Przy konwersji odcinka na Béziera lub łuk usuwamy wszystkie ograniczenia długości i równoległości dotyczące tego odcinka, także relacje z innymi wielokątami. Usunięcie jest częścią tej samej transakcji; nieudana konwersja przywraca również relacje.
-- Konwersja krzywej na odcinek nie odtwarza dawnych ograniczeń. Użytkownik może nadać je ponownie. Każda konwersja wymaga poprawnych ustawień ciągłości i wykonalnego wyniku solvera.
-
-Indeksy `VertexId -> krawędzie incydentne` i `EdgeId -> ograniczenia` przyspieszają wyszukiwanie zależności. Są danymi pochodnymi, odbudowywanymi po zmianie topologii; nie stanowią drugiego źródła prawdy.
-
-`validateDocument()` sprawdza cykle, referencje, skończone współrzędne, dopuszczalne typy ciągłości, brak odwołań do usuniętych encji oraz to, czy każda relacja długości lub równoległości dotyczy wyłącznie odcinków. Kopia dokumentu wystarczy jako początkowy mechanizm transakcji dla niewielkiej sceny demonstracyjnej.
+[`SceneIO`](../../cad_core/include/cad_core/io/SceneIO.h) zapisuje kompletny stan trwały dokumentu: encje, ID, liczniki, geometrię, grubości, ciągłość i ograniczenia. Stan zaznaczenia, gestu i renderera nie jest serializowany. Opis składni i kontroli danych znajduje się w [specyfikacji `.cadscene`](../scene-format.md).

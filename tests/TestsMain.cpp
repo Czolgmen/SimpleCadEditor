@@ -17,12 +17,15 @@ int main()
 {
     const std::array suites{
         TestSuite{"Document", cad::tests::documentTests()},
+        TestSuite{"SceneIO", cad::tests::sceneIOTests()},
+        TestSuite{"EdgeStyle", cad::tests::edgeStyleTests()},
         TestSuite{"DocumentArc", cad::tests::documentArcTests()},
         TestSuite{"ArcContinuity", cad::tests::arcContinuityTests()},
         TestSuite{"ArcSolver", cad::tests::arcSolverTests()},
         TestSuite{"ArcConversion", cad::tests::arcConversionTests()},
         TestSuite{"ArcSplit", cad::tests::arcSplitTests()},
         TestSuite{"Bresenham", cad::tests::bresenhamTests()},
+        TestSuite{"Wu", cad::tests::wuTests()},
         TestSuite{"LineClipping", cad::tests::lineClippingTests()},
         TestSuite{"DocumentParallel", cad::tests::documentParallelTests()},
         TestSuite{"EdgeConversion", cad::tests::edgeConversionTests()},
