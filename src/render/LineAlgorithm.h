@@ -4,7 +4,8 @@ namespace cad::render
 {
     enum class LineAlgorithm {
         Gdi,
-        Bresenham
+        Bresenham,
+        Wu
     };
 } // namespace cad::render
 

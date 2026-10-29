@@ -14,6 +14,8 @@
 #include <sstream>
 #include <string>
 #include <limits>
+#include <map>
+#include <algorithm>
 
 namespace cad::win32
 {
@@ -95,9 +97,12 @@ namespace cad::win32
 
         // Flush the GDI background once before the CPU batch. All decorations
         // are issued after that batch, so no GDI writes race with CPU pixels.
-        const bool useBresenham = algorithm == render::LineAlgorithm::Bresenham &&
+        const bool useRaster = (algorithm == render::LineAlgorithm::Bresenham || algorithm == render::LineAlgorithm::Wu) &&
             buffer && buffer->dc() == dc && buffer->pixels() && GdiFlush();
         std::vector<render::PixelPoint> scratch;
+        WuScratch wuScratch;
+        std::vector<Vec2> screenPoints;
+        std::map<std::pair<int, COLORREF>, HPEN> edgePens;
 
         for (const auto& [id, polygon] : document.getPolygons())
         {
@@ -116,22 +121,41 @@ namespace cad::win32
                 const bool highlighted =
                     selectedPolygon == id || selectedEdge == IdEdge;
                 const bool pending = pendingParallelEdge == IdEdge;
-                if (!useBresenham)
-                    SelectObject(dc, pending ? pendingPen : (highlighted ? selectedPen : normalPen));
+                const int strokeWidth = std::clamp(ed->strokeWidth, 1, 32) + (pending || highlighted ? 2 : 0);
+                if (!useRaster)
+                {
+                    const COLORREF color = pending ? RGB(220,120,0) : highlighted ? RGB(0,120,215) : RGB(0,0,0);
+                    const auto key = std::pair{strokeWidth, color};
+                    auto [pen, inserted] = edgePens.try_emplace(key, nullptr);
+                    if (inserted) pen->second = CreatePen(PS_SOLID, strokeWidth, color);
+                    if (!pen->second) continue;
+                    SelectObject(dc, pen->second);
+                }
 
                 const auto points = sampleEdge(
                     ed->geometry,
                     start->position,
                     end->position);
 
+                if (useRaster && algorithm == render::LineAlgorithm::Wu)
+                {
+                    screenPoints.clear();
+                    screenPoints.reserve(points.size());
+                    for (const auto& point : points) screenPoints.push_back(worldToScreenDouble(point, clientRect));
+                    drawWuPolyline(*buffer, screenPoints,
+                        pending ? 0x00DC7800 : highlighted ? 0x000078D7 : 0x00000000,
+                        wuScratch, strokeWidth, &clientRect);
+                    continue;
+                }
+
                 for (std::size_t i = 1; i < points.size(); ++i)
                 {
                     const Vec2 screenStart = worldToScreenDouble(points[i - 1], clientRect);
                     const Vec2 screenEnd = worldToScreenDouble(points[i], clientRect);
-                    if (useBresenham)
+                    if (useRaster)
                         drawBresenhamLine(*buffer, screenStart, screenEnd,
                             pending ? 0x00DC7800 : highlighted ? 0x000078D7 : 0x00000000,
-                            scratch, pending || highlighted ? 4 : 2, &clientRect);
+                            scratch, strokeWidth, &clientRect);
                     else if (const auto segment = clipScreenSegment(screenStart, screenEnd, clientRect))
                         drawGdiSegment(dc, *segment);
                 }
@@ -274,6 +298,7 @@ namespace cad::win32
         SelectObject(dc, previousPen);
         RestoreDC(dc, savedDc);
 
+        for (const auto& [key, pen] : edgePens) if (pen) DeleteObject(pen);
         DeleteObject(selectedPen);
         DeleteObject(pendingPen);
         DeleteObject(normalPen);

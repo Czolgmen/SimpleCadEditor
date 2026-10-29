@@ -37,6 +37,8 @@ namespace cad::editor
         // Sets/updates the relation on a candidate, solving with the edge's start pinned.
         bool setSelectedEdgeLength(double length);
         bool removeSelectedEdgeLength();
+        std::optional<int> selectedEdgeStrokeWidth() const;
+        bool setSelectedEdgeStrokeWidth(int width);
 
         std::optional<EdgeId> pendingParallelEdge() const noexcept;
         bool beginParallelSelection();

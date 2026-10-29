@@ -1,23 +1,27 @@
-# Gotowy program dla Windows x64
+# Dystrybucja aplikacji — Windows x64
 
-Uruchom **Projecr1_GK.exe** dwukrotnym kliknięciem. Program jest przeznaczony dla 64-bitowego Windows 10/11.
+Plik **Projecr1_GK.exe** jest wersją Release przeznaczoną dla Windows 10/11 x64. Uruchomienie nie wymaga kompilacji, Visual Studio ani osobnej instalacji pakietu Visual C++ Redistributable: biblioteka wykonawcza C++ jest dołączona statycznie. Program korzysta z bibliotek systemowych Windows.
 
-Można skopiować sam plik EXE na drugi komputer. Nie wymaga Visual Studio, kompilatora ani osobnej instalacji bibliotek Microsoft Visual C++: wersja Release ma je dołączone statycznie. Korzysta z bibliotek systemowych Windows. Scena początkowa, ikony, pomoc F1 i pełna dokumentacja są wbudowane w EXE.
+Scena demonstracyjna, ikony, instrukcja F1 i pełna dokumentacja są zawarte w pliku wykonywalnym. EXE może zostać skopiowany i uruchomiony samodzielnie na innym komputerze spełniającym wymagania systemowe.
 
-Zmiany sceny nie są zapisywane między uruchomieniami. Instrukcję obsługi otwiera F1, a opis algorytmów przycisk Dokumentacja.
+## Obsługa i dane użytkownika
 
-Plik `SHA256SUMS.txt` zawiera sumę kontrolną bieżącego EXE. W PowerShell można ją sprawdzić poleceniem:
+Instrukcję otwiera F1, a opis modelu i algorytmów przycisk Dokumentacja. Polecenie **Plik → Zapisz jako...** (`Ctrl+Shift+S`) zapisuje scenę w pliku `.cadscene`; **Plik → Załaduj...** (`Ctrl+O`) odtwarza geometrię, grubości i ograniczenia. Pliki scen są niezależne od EXE i mogą być przenoszone między komputerami. Program nie prowadzi automatycznego zapisu.
+
+## Integralność pliku
+
+`SHA256SUMS.txt` zawiera sumę kontrolną bieżącego EXE. Wartość obliczona poniższym poleceniem powinna być zgodna z zapisanym skrótem:
 
 ```powershell
 Get-FileHash .\Projecr1_GK.exe -Algorithm SHA256
 ```
 
-## Odświeżanie wersji w repozytorium
+## Odtworzenie dystrybucji ze źródeł
 
-Po zmianach kodu lub dokumentacji uruchom z katalogu repozytorium:
+Z katalogu repozytorium należy uruchomić:
 
 ```powershell
 .\scripts\build-release.cmd
 ```
 
-Do tej operacji potrzebne są narzędzia Visual Studio opisane w [dokumentacji budowania](../../docs/documentation.md#9-budowanie-testy-i-przekazanie-programu). Skrypt buduje Release x64, kopiuje aktualny EXE tutaj i aktualizuje sumę kontrolną. Aktualizację paczki należy dołączyć do commita razem ze zmianami źródeł. Skrypt nie wykonuje commitów.
+Skrypt buduje Release x64, kopiuje program do katalogu dystrybucji i aktualizuje sumę SHA-256. Wymagania narzędziowe opisuje [dokumentacja projektu](../../docs/documentation.md#9-budowanie-testy-i-przekazanie-programu). Aktualizacja źródeł lub dokumentacji osadzonej w zasobach wymaga ponownego zbudowania dystrybucji. Skrypt nie wykonuje operacji Git.

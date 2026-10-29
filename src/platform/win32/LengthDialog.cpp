@@ -8,6 +8,7 @@
 #include <limits>
 #include <locale>
 #include <sstream>
+#include <cmath>
 
 namespace
 {
@@ -15,6 +16,7 @@ namespace
     {
         double initial;
         std::optional<double> result;
+        bool strokeWidth = false;
     };
 
     INT_PTR CALLBACK lengthDialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
@@ -44,15 +46,16 @@ namespace
                 wchar_t text[129]{};
                 GetDlgItemTextW(dialog, IDC_LENGTH_EDIT, text, static_cast<int>(std::size(text)));
                 const auto length = cad::editor::parsePositiveLength(text);
-                if (!length)
+                auto* state = reinterpret_cast<LengthDialogState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+                if (!length || (state->strokeWidth && (*length < 1 || *length > 32 || std::floor(*length) != *length)))
                 {
-                    MessageBoxW(dialog, L"Podaj dodatnią, skończoną długość, np. 100 lub 12,5.",
-                        L"Niepoprawna długość", MB_OK | MB_ICONWARNING);
+                    MessageBoxW(dialog, state->strokeWidth ? L"Podaj całkowitą grubość od 1 do 32 pikseli." :
+                        L"Podaj dodatnią, skończoną długość, np. 100 lub 12,5.",
+                        state->strokeWidth ? L"Niepoprawna grubość" : L"Niepoprawna długość", MB_OK | MB_ICONWARNING);
                     SetFocus(GetDlgItem(dialog, IDC_LENGTH_EDIT));
                     SendDlgItemMessageW(dialog, IDC_LENGTH_EDIT, EM_SETSEL, 0, -1);
                     return TRUE;
                 }
-                auto* state = reinterpret_cast<LengthDialogState*>(GetWindowLongPtrW(dialog, DWLP_USER));
                 state->result = *length;
                 EndDialog(dialog, IDOK);
                 return TRUE;
@@ -69,6 +72,17 @@ namespace
 
 namespace cad::win32
 {
+    std::optional<int> askStrokeWidth(HINSTANCE instance, HWND owner, int currentWidth)
+    {
+        LengthDialogState state{static_cast<double>(currentWidth), std::nullopt, true};
+        const auto result = DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_EDGE_WIDTH), owner,
+            lengthDialogProc, reinterpret_cast<LPARAM>(&state));
+        if (result == IDOK && state.result) return static_cast<int>(*state.result);
+        if (result == -1)
+            MessageBoxW(owner, L"Nie udało się otworzyć okna grubości.", L"Grubość krawędzi", MB_OK | MB_ICONERROR);
+        return std::nullopt;
+    }
+
     std::optional<double> askFixedLength(HINSTANCE instance, HWND owner, double currentLength)
     {
         LengthDialogState state{currentLength, std::nullopt};

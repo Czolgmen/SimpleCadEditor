@@ -22,6 +22,10 @@
 #define IDM_CONVERT_TO_ARC           32781
 #define IDM_HELP                     32782
 #define IDM_DOCUMENTATION            32783
+#define IDM_SCENE_SAVE_AS            32784
+#define IDM_SCENE_LOAD               32785
+#define IDM_SET_EDGE_WIDTH           32786
+#define IDD_EDGE_WIDTH               132
 #define IDD_FIXED_LENGTH             129
 #define IDD_HELP                     130
 #define IDR_DOCUMENTATION            131
@@ -31,6 +35,7 @@
 #define IDC_HELP_TOPIC               1003
 #define IDC_HELP_TEXT                1004
 #define IDC_DOCUMENTATION            1005
+#define IDC_LINE_WU                  1006
 #define IDI_PROJECR1GK			107
 #define IDI_SMALL				108
 #define IDC_PROJECR1GK			109
@@ -44,9 +49,9 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 
 #define _APS_NO_MFC					130
-#define _APS_NEXT_RESOURCE_VALUE	132
-#define _APS_NEXT_COMMAND_VALUE		32784
-#define _APS_NEXT_CONTROL_VALUE		1006
+#define _APS_NEXT_RESOURCE_VALUE	133
+#define _APS_NEXT_COMMAND_VALUE		32787
+#define _APS_NEXT_CONTROL_VALUE		1007
 #define _APS_NEXT_SYMED_VALUE		110
 #endif
 #endif

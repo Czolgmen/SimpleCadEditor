@@ -8,6 +8,7 @@
 #include <platform/win32/GdiRenderer.h>
 #include <platform/win32/LengthDialog.h>
 #include <platform/win32/HelpDialog.h>
+#include <platform/win32/SceneFiles.h>
 #include <cad_core/demo/DemoScene.hpp>
 #include <editor/HitTester.h>
 
@@ -40,6 +41,14 @@ namespace
     constexpr UINT pointerFrameIntervalMs = 1;
     constexpr int algorithmBarHeight = 40;
 
+    void checkAlgorithmControls(HWND window, cad::render::LineAlgorithm algorithm)
+    {
+        const int chosen = algorithm == cad::render::LineAlgorithm::Wu ? IDC_LINE_WU :
+            algorithm == cad::render::LineAlgorithm::Bresenham ? IDC_LINE_BRESENHAM : IDC_LINE_GDI;
+        for (const int id : {IDC_LINE_GDI, IDC_LINE_BRESENHAM, IDC_LINE_WU})
+            CheckDlgButton(window, id, id == chosen ? BST_CHECKED : BST_UNCHECKED);
+    }
+
     bool createAlgorithmControls(HWND window, cad::render::LineAlgorithm algorithm)
     {
         const DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON;
@@ -47,14 +56,15 @@ namespace
             65, 8, 70, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_GDI)), hInst, nullptr);
         HWND bresenham = CreateWindowExW(0, L"BUTTON", L"Bresenham", style,
             145, 8, 125, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_BRESENHAM)), hInst, nullptr);
+        HWND wu = CreateWindowExW(0, L"BUTTON", L"Wu (AA)", style,
+            275, 8, 95, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINE_WU)), hInst, nullptr);
         HWND documentation = CreateWindowExW(0, L"BUTTON", L"Dokumentacja", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_PUSHBUTTON,
-            290, 8, 130, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_DOCUMENTATION)), hInst, nullptr);
-        if (!gdi || !bresenham || !documentation)
+            390, 8, 130, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_DOCUMENTATION)), hInst, nullptr);
+        if (!gdi || !bresenham || !wu || !documentation)
             return false;
-        for (const HWND control : {gdi, bresenham, documentation})
+        for (const HWND control : {gdi, bresenham, wu, documentation})
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), FALSE);
-        CheckRadioButton(window, IDC_LINE_GDI, IDC_LINE_BRESENHAM,
-            algorithm == cad::render::LineAlgorithm::Bresenham ? IDC_LINE_BRESENHAM : IDC_LINE_GDI);
+        checkAlgorithmControls(window, algorithm);
         return true;
     }
 
@@ -129,6 +139,12 @@ namespace
             return false;
         }
         return true; // The parent menu now owns the submenu.
+    }
+
+    bool appendStrokeWidthMenu(HMENU menu, const cad::editor::EditorSession& editor)
+    {
+        return AppendMenuW(menu, MF_STRING | (editor.selectedEdgeStrokeWidth() ? MF_ENABLED : MF_GRAYED),
+            IDM_SET_EDGE_WIDTH, L"Grubość krawędzi...") != FALSE;
     }
 
     bool appendContinuityMenu(HMENU menu, const cad::editor::EditorSession& editor)
@@ -570,6 +586,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto menuEdge = state->editor.selection().edge;
         std::vector<cad::EdgeId> parallelRemovalTargets;
         if (!AppendMenuW(menu, flags, IDM_SPLIT_EDGE, L"Podziel krawędź") ||
+            !appendStrokeWidthMenu(menu, state->editor) ||
             !AppendMenuW(menu, deleteFlags, IDM_DELETE_VERTEX, L"Usuń wierzchołek\tDelete") ||
             !appendContinuityMenu(menu, state->editor) ||
             !AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) ||
@@ -635,15 +652,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 return 0;
             }
-            if (controlId == IDC_LINE_GDI || controlId == IDC_LINE_BRESENHAM)
+            if (controlId == IDC_LINE_GDI || controlId == IDC_LINE_BRESENHAM || controlId == IDC_LINE_WU)
             {
                 if (HIWORD(wParam) == BN_CLICKED && lParam &&
                     reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, controlId))
                     if (auto* state = getAppState(hWnd))
                     {
-                        state->lineAlgorithm = controlId == IDC_LINE_GDI
-                            ? cad::render::LineAlgorithm::Gdi : cad::render::LineAlgorithm::Bresenham;
-                        CheckRadioButton(hWnd, IDC_LINE_GDI, IDC_LINE_BRESENHAM, controlId);
+                        state->lineAlgorithm = controlId == IDC_LINE_WU ? cad::render::LineAlgorithm::Wu :
+                            controlId == IDC_LINE_GDI ? cad::render::LineAlgorithm::Gdi : cad::render::LineAlgorithm::Bresenham;
+                        checkAlgorithmControls(hWnd, state->lineAlgorithm);
                         InvalidateRect(hWnd, nullptr, FALSE);
                     }
                 return 0;
@@ -715,6 +732,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
+            case IDM_SET_EDGE_WIDTH:
+            {
+                auto* state = getAppState(hWnd);
+                if (!state) return 0;
+                const auto current = state->editor.selectedEdgeStrokeWidth();
+                if (!current) return 0;
+                stopPointerUpdates(hWnd);
+                state->editor.pointerUp();
+                releaseMouseCapture(hWnd);
+                const auto width = cad::win32::askStrokeWidth(hInst, hWnd, *current);
+                if (!width) return 0;
+                if (!state->editor.setSelectedEdgeStrokeWidth(*width))
+                    MessageBoxW(hWnd, L"Nie udało się zmienić grubości krawędzi.", L"Grubość krawędzi", MB_OK | MB_ICONWARNING);
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             case IDM_SET_FIXED_LENGTH:
             {
                 auto* state = getAppState(hWnd);
@@ -778,6 +811,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 releaseMouseCapture(hWnd);
                 InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+            case IDM_SCENE_SAVE_AS:
+            case IDM_SCENE_LOAD:
+            {
+                auto* state = getAppState(hWnd);
+                if (!state) return 0;
+                // End the gesture before a modal dialog takes focus/capture. Keep
+                // the last accepted preview; do not serialize pending mouse input.
+                stopPointerUpdates(hWnd);
+                state->editor.pointerUp();
+                state->editor.cancelParallelSelection();
+                releaseMouseCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
+                const bool saving = wmId == IDM_SCENE_SAVE_AS;
+                const auto path = cad::win32::askScenePath(hWnd, saving);
+                if (!path) return 0;
+                if (saving)
+                {
+                    std::wstring error;
+                    if (!cad::win32::saveSceneFile(*path, state->editor.document(), error))
+                        MessageBoxW(hWnd, error.c_str(), L"Nie udało się zapisać sceny", MB_OK | MB_ICONERROR);
+                }
+                else
+                {
+                    auto loaded = cad::win32::loadSceneFile(*path);
+                    if (!loaded.document)
+                    {
+                        const auto errorText = loaded.error + L"\n\nBieżąca scena nie została zmieniona.";
+                        MessageBoxW(hWnd, errorText.c_str(), L"Nie udało się załadować sceny", MB_OK | MB_ICONERROR);
+                        return 0;
+                    }
+                    state->editor = cad::editor::EditorSession(std::move(*loaded.document));
+                    state->showConsistencyWarning = false;
+                    InvalidateRect(hWnd, nullptr, FALSE);
+                }
                 return 0;
             }
             case IDM_ABOUT:

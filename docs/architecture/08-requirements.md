@@ -1,57 +1,39 @@
-# Założenia i pokrycie wymagań
+# 08. Zakres funkcjonalny i decyzje projektowe
 
-[Spis treści](README.md)
+[Spis dokumentacji architektury](README.md)
 
-## Ustalenia
+## Zakres projektu
 
-- C++20, WinAPI i GDI jako pierwszy frontend.
-- Niezależny od Windows rdzeń geometrii, solver oraz obsługa edycji.
-- Wariant **A–K**, wskazany przez użytkownika: równoległość i domyślne G1 dla Béziera.
-- Zgodnie z doprecyzowaniem użytkownika ograniczenia długości i równoległości dotyczą tylko odcinków. Béziery i łuki, w tym półokręgi, zachowują obsługę ciągłości, bez tych ograniczeń krawędzi.
-- Dokumenty architektury zachowują również plany rozbudowy. Bieżący stan i rzeczywiste API opisuje [dokumentacja programu](../documentation.md); skrócona pomoc jest wbudowana w aplikację pod F1.
+Implementacja odpowiada wariantowi **A–K**: relacji równoległości odcinków i domyślnej ciągłości G1 przy konwersji na Béziera. Długość i równoległość dotyczą wyłącznie odcinków. Béziery i łuki uczestniczą w warunkach ciągłości. Interfejs jest oparty na WinAPI i GDI, a kod modelu, obliczeń i edycji pozostaje niezależny od Windows.
 
-## Interpretacje wymagające jawnego opisania
+| Funkcjonalność | Główne miejsce realizacji |
+| --- | --- |
+| Wiele wielokątów, w tym samoprzecinających się | `Document`, `HitTester` |
+| Przesuwanie wierzchołków, uchwytów i całych figur | `EditorSession`, `DragState`, solver |
+| Podział i usuwanie wierzchołków | `Document`, transakcje sesji |
+| Stała długość z dialogu | `FixedLengthConstraint`, `LengthDialog`, solver |
+| Równoległość, także między figurami | `ParallelConstraint`, sesja i solver |
+| Jednoczesne relacje i usuwanie pojedynczego ograniczenia | Kontenery relacji w `Document`, menu kontekstowe |
+| Bézier trzeciego stopnia i dwa uchwyty | `EdgeGeometry`, `Bezier`, renderer |
+| G0/G1/C1, domyślne G1 i jawne ustawienia | `ContinuitySetting`, `ContinuityConstraint` |
+| Łuki G0/G1 i analityczne dopasowanie | `Arc`, `ArcContinuity`, walidacja |
+| Biblioteczne odcinki i własny Bresenham | `GdiRenderer`, `Bresenham`, `DibRenderer` |
+| Przyrostowe próbkowanie Béziera | `sampleBezier` |
+| Antyaliasing i indywidualna grubość krawędzi | `Wu`, `Edge::strokeWidth`, renderery |
+| Zapisz jako i Załaduj | `SceneIO`, `SceneFiles` |
+| Dwie figury demonstracyjne z relacjami i krzywymi | `DemoScene.cpp` |
+| Instrukcja i opis algorytmów w aplikacji | `HelpDialog`, zasoby dokumentacji |
 
-Poniższe decyzje są propozycjami projektowymi dla miejsc, których specyfikacja nie rozstrzyga. Weryfikacja ich zgodności z oczekiwaniami prowadzącego może zmienić szczegółowe operacje i równania, ale nie wymaga zmiany podziału na warstwy.
+## Przyjęte reguły edycji
 
-| Temat | Proponowana decyzja | Konsekwencja |
-| --- | --- | --- |
-| Konwersja odcinka na krzywą | Usunięcie jego relacji długości i równoległości w ramach transakcji | Brak niedozwolonych relacji na krzywych; nieudana konwersja przywraca również relacje |
-| Konwersja krzywej na odcinek | Bez automatycznego odtwarzania dawnych relacji | Nowe ograniczenia użytkownik nadaje jawnie |
-| C1 | Pochodne dla parametru każdego segmentu w `[0,1]` | Uchwyt przy odcinku ma długość równą jednej trzeciej długości odcinka |
-| Podział krawędzi | Punkt dla `t=0.5`, dla odcinka zwykły środek | Nie obliczamy połowy długości łukowej Béziera |
-| Podział łuku | Dwa odcinki przez środkowy punkt łuku | Nie powstają dwa łuki sprzeczne z regułą promienia dla G0/G0; operacja zmienia kształt |
-| Usuwanie wierzchołka | Zastąpienie dwóch sąsiednich krawędzi jednym odcinkiem | Prosty i przewidywalny model; brak arbitralnego dopasowania nowej krzywej |
-| Ciągłość po zmianie sąsiedztwa | Zachowanie jawnych ustawień ocalałych wierzchołków, ponowne rozwiązanie relacji | Zmiana topologii może zostać odrzucona, jeśli nie uzyska poprawnego wyniku |
-| Niewykonalny ruch | Pozostaje ostatni poprawny podgląd i ostrzeżenie; puszczenie myszy zachowuje ten podgląd, a Esc cofa cały gest | Nie można matematycznie zagwarantować dowolnego położenia i wszystkich możliwych relacji jednocześnie |
-| Przesunięcie wielokąta | Sztywna translacja wskazanego obiektu | Długości, kierunki, ciągłość i bulge pozostają zachowane; inne figury nie są przesuwane |
-| Nowe wielokąty | Dodawane czytelnie w kodzie sceny początkowej | Zgodnie z jawnym dopuszczeniem w punkcie 1 zadania, kreator UI nie jest wymagany |
-| Wnętrze przy samoprzecięciach | Reguła parzystości | Jednoznaczny wybór wnętrza do przesuwania wielokąta |
+Konwersja odcinka na krzywą usuwa relacje długości i równoległości tej krawędzi. Powrót do odcinka nie przywraca dawnych relacji. Jawna ciągłość ocalałych wierzchołków jest zachowywana i ponownie rozwiązywana po zmianie sąsiedztwa.
 
-Zakres ograniczeń nie jest już niejednoznacznością: długość i równoległość obsługujemy wyłącznie dla odcinków, zgodnie z ustaleniem powyżej. Równania ciągłości pozostają potrzebne dla krzywych i mogą wpływać na ograniczenia sąsiednich odcinków przez wspólne wierzchołki.
+Podział korzysta z parametru `t=0,5`; w przypadku Béziera nie oznacza to połowy długości łukowej. Łuk jest zastępowany dwoma odcinkami przez punkt środkowy parametru. Usunięcie wierzchołka zastępuje obie krawędzie jednym odcinkiem. Figura musi zachować co najmniej trzy wierzchołki.
 
-## Mapa wymagań
+Niewykonalna próba edycji zachowuje ostatni poprawny stan. Translacja całego wielokąta zachowuje jego kształt i nie przesuwa pozostałych figur. Wnętrze samoprzecinającego się obrysu jest określane regułą parzystości.
 
-| Wymaganie | Główne miejsce realizacji | Sprawdzenie |
-| --- | --- | --- |
-| Dowolna liczba wielokątów i samoprzecięcia | `Document`, `DemoSceneBuilder` | Dopisanie kolejnego wielokąta bez zmiany logiki; scena samoprzecinająca |
-| Edycja dowolnego wielokąta i przesuwanie całości | `EditorSession`, hit testing, solver | Przesunięcie obu obiektów, także połączonych relacją |
-| Ruch wierzchołków i punktów kontrolnych | Stan gestu i dokładnie zadane współrzędne | Ruch prowadzony oraz propagacja do elementów zależnych |
-| Podział krawędzi i usuwanie wierzchołka | Operacje topologiczne | Spójne ID i znikanie właściwych relacji |
-| Długość odcinka z dialogu i bieżąca wartość domyślna | Dialog WinAPI + `AddFixedLength` | Edycja liczby, odrzucenie wartości niepoprawnej i krawędzi innego typu |
-| Równoległość odcinków, również między wielokątami | `Parallel`, graf zależności, solver | Scena dwóch wielokątów i wspólna edycja; odrzucenie krzywych |
-| Kilka relacji na jednym odcinku | Rejestr ograniczeń | Długość i równoległość działające jednocześnie |
-| Wyświetlanie i usuwanie relacji | `SceneRenderer`, wybór oznaczenia, `RemoveConstraint` | Usunięcie jednej relacji bez naruszenia pozostałych |
-| Konwersja odcinek/Bézier i dwa uchwyty | `EdgeGeometry`, konwersja, renderer | Przełączenie typu, usunięcie relacji odcinka i manipulacja uchwytami |
-| G0/G1/C1 i domyślne G1 | `ContinuitySetting`, równania ciągłości | Poprawne styczne oraz zachowanie jawnych ustawień |
-| Łuki G0/G1 i najwyżej jeden koniec G1 | Geometria łuku i walidator | Półokrąg dla G0/G0, odrzucenie drugiego G1 |
-| Biblioteczne odcinki i własny Bresenham | `cad_render`, GDI, radio buttony | Przełączanie algorytmu podczas pracy |
-| Przyrostowe rysowanie Béziera | Sampler bazy potęgowej | Porównanie próbek z niezależną ewaluacją |
-| Scena początkowa z dwoma wielokątami, relacjami i Bézierem | `DemoSceneBuilder` | Poprawna scena dostępna natychmiast po uruchomieniu |
-| Dokumentacja obsługi, modelu i algorytmów | `docs`, polecenie pomocy F1 | Pomoc dostępna z aplikacji i zgodna z implementacją |
+## Granice implementacji
 
-## Priorytety zakresu
+Program nie zawiera kreatora nowych wielokątów w interfejsie; sceny mogą być definiowane w kodzie lub wczytywane z pliku. Nie zaimplementowano pełnej historii undo/redo, przyciągania, siatki ani wymiany z zewnętrznymi formatami CAD. Anulowanie obejmuje bieżący gest. Próbkowanie krzywych ma stałą liczbę segmentów, a gęsty solver jest przeznaczony przede wszystkim do niewielkich scen projektu.
 
-Najpierw poprawny model, sprzężone relacje, krzywe i wymagana rasteryzacja. Wypełnienia, siatka, przyciąganie, zapis plików, pełna historia undo/redo, kreator wielokątów i dodatkowa prostopadłość pozostają rozszerzeniami.
-
-Zakładamy niewielką scenę demonstracyjną. Nie określamy wydajności dla tysięcy obiektów przed pomiarami. Parametry numeryczne i limity solvera zostaną wybrane na podstawie prototypu i opisane w dokumentacji końcowej.
+Ocena zgodności funkcjonalnej jest wspierana przez [testy automatyczne](../../tests/README.md) i [scenariusz prezentacji](../documentation.md#10-scenariusz-prezentacji). Liczba testów nie stanowi dowodu poprawności dla wszystkich możliwych danych.

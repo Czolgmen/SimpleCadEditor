@@ -1,14 +1,12 @@
-# Edytor wielokątów — dokumentacja programu
+# Edytor wielokątów — dokumentacja projektu
 
-Program służy do edycji wielokątów z prostymi krawędziami, krzywymi Béziera i łukami okręgów. Można przesuwać ich punkty oraz ustawiać warunki, które geometria ma zachować. Moduł obliczający położenia zgodne z tymi warunkami nazywamy dalej solverem.
+Projekt z zakresu grafiki komputerowej obejmuje implementację interaktywnego edytora geometrii dwuwymiarowej. Aplikacja umożliwia edycję wielokątów, których krawędzie są odcinkami, krzywymi Béziera trzeciego stopnia lub łukami okręgów. Moduł numerycznego rozwiązywania ograniczeń (solver) utrzymuje zadane długości, równoległość odcinków oraz dopuszczalne warunki ciągłości.
 
-Projekt realizuje wariant **A–K**: zadaną długość i równoległość odcinków oraz domyślne G1 przy włączeniu Béziera. Jest napisany w C++20. Okna i obsługę myszy zapewnia WinAPI, a rysowanie korzysta z GDI lub własnego Bresenhama. Model dokumentu, geometria i solver są niezależne od Windows.
+Implementacja realizuje wariant **A-K**: relację równoległości i domyślną ciągłość **G1** przy konwersji krawędzi na krzywą Béziera. Projekt wykorzystuje **C++20, WinAPI i GDI**. Własna rasteryzacja obejmuje algorytmy Bresenhama i Xiaolina Wu. Model, geometria, solver oraz logika sesji edytora nie zależą od interfejsu Windows.
 
-Rozdziały 1–5 opisują obsługę i przyjęte zasady. Rozdziały 6–8 wyjaśniają kod i algorytmy; można do nich wrócić po zapoznaniu się z programem.
+Dokument opisuje zakres funkcjonalny, obsługę, architekturę i metody weryfikacji. Uzupełniają go [specyfikacja algorytmów z pseudokodem](algorithms.md), [opis architektury](architecture/README.md), [format sceny](scene-format.md) oraz [dokumentacja testów](../tests/README.md).
 
-Skrócona pomoc jest wbudowana w aplikację: **F1** lub **Pomoc → Obsługa programu**. Otwiera osobne, skalowalne okno z wyborem tematu, przewijanym tekstem i możliwością kopiowania. Dokumentacja w tym pliku jest osobnym materiałem; do działania pomocy nie jest potrzebny dostęp do niej ani do internetu.
-
-Przycisk **Dokumentacja** na górnym pasku lub **Pomoc → Dokumentacja algorytmów...** otwiera osobne okno pełnej dokumentacji. Lista rozdziałów obejmuje m.in. model danych, algorytmy rysowania i solver; domyślnie wyświetlany jest rozdział o algorytmach geometrycznych. Treść pochodzi z tego pliku, dołączanego do zasobów EXE podczas kompilacji. Pomoc F1 i dokumentację można otworzyć równocześnie. Tekst dokumentacji jest prezentowany bez znaczników Markdown, z zachowaniem wzorów i bloków kodu.
+Skrócona instrukcja jest dostępna przez **F1** i **Pomoc → Obsługa programu**. Przycisk **Dokumentacja** oraz **Pomoc → Dokumentacja algorytmów...** otwierają pełną dokumentację w osobnym oknie. Treść jest dołączana do zasobów EXE podczas kompilacji. Oba okna obsługują zmianę rozmiaru, przewijanie i kopiowanie tekstu; nie wymagają internetu ani zewnętrznych plików Markdown.
 
 ## Spis treści
 
@@ -25,165 +23,156 @@ Przycisk **Dokumentacja** na górnym pasku lub **Pomoc → Dokumentacja algorytm
 
 ## 1. Uruchomienie i scena demonstracyjna
 
-Program automatycznie tworzy dwie figury, każdą o pięciu wierzchołkach. Nie trzeba przygotowywać sceny ręcznie.
+Po uruchomieniu aplikacja tworzy dwa wielokąty o pięciu wierzchołkach. Scena przedstawia podstawowe typy geometrii i relacji.
 
-| Figura | Elementy demonstracyjne |
+| Obiekt | Zawartość |
 | --- | --- |
-| Lewa | Górny Bézier z dwoma uchwytami; C1 przy pionowym boku i G1 przy ukośnym; długości dolnego i pionowego odcinka odpowiednio 180 i 120 |
-| Prawa | Łuk G1 przy pionowym boku i półokrąg G0/G0; długość dolnego odcinka 160 |
-| Obie | Dwie pary równoległości: dolne odcinki oraz pionowe odcinki obu figur |
+| Lewy wielokąt | Bézier z dwoma uchwytami; C1 przy pionowej krawędzi i G1 przy ukośnej; zadane długości 180 i 120 |
+| Prawy wielokąt | Łuk G1 oraz półokrąg G0/G0; zadana długość dolnej krawędzi 160 |
+| Relacje między figurami | Dwie pary równoległości łączące dolne i pionowe odcinki |
 
-Wszystkie ustawione warunki są spełnione od razu po uruchomieniu. Wierzchołki, krzywe i uchwyty mieszczą się w obszarze rysowania okna 640×420 pikseli, z miejscem na górny pasek. Przy bardzo małym oknie część sceny może być przycięta; można powiększyć okno.
+Funkcja `createDemoScene` w [DemoScene.cpp](../cad_core/src/demo/DemoScene.cpp) buduje model, sprawdza jego strukturę i rozwiązuje aktywne ograniczenia przed wyświetleniem. W początkowym stanie relacje są spełnione. Rozmieszczenie uwzględnia obszar sceny i pasek narzędzi w oknie o rozmiarze klienta 640 × 420 px. Zmniejszenie okna może ograniczyć widoczną część geometrii, bez zmiany jej współrzędnych.
 
-Scena powstaje w [DemoScene.cpp](../cad_core/src/demo/DemoScene.cpp). Dodanie figury wymaga tablicy jej współrzędnych i wywołania `Document::addPolygon`. Zwrócone ID pozwala ustawić geometrię i relacje jej krawędzi. Przed pokazaniem sceny program sprawdza strukturę dokumentu i dopasowuje geometrię do ustawionych warunków.
-
-Zmiany nie są zapisywane między uruchomieniami. Zamknięcie i ponowne uruchomienie programu przywraca scenę demonstracyjną.
+Każda sesja rozpoczyna się od sceny demonstracyjnej. Własny stan można zachować w pliku `.cadscene`. Automatyczny zapis i automatyczne otwieranie ostatniego dokumentu nie są zaimplementowane.
 
 ## 2. Mysz, klawisze i zaznaczanie
 
+Skróty LPM i PPM oznaczają odpowiednio lewy i prawy przycisk myszy.
+
 | Wejście | Działanie |
 | --- | --- |
-| LPM na wierzchołku | Zaznaczenie; przytrzymanie i ruch myszy przeciąga wierzchołek |
-| LPM na kwadratowym uchwycie | Zaznaczenie i przeciąganie punktu kontrolnego Béziera |
-| LPM blisko krawędzi | Zaznaczenie krawędzi; jej operacje są w menu PPM |
-| LPM wewnątrz figury | Zaznaczenie i przeciąganie całego wielokąta |
+| LPM na wierzchołku lub uchwycie | Zaznaczenie; przytrzymanie przycisku umożliwia przesuwanie punktu |
+| LPM w pobliżu krawędzi | Zaznaczenie krawędzi |
+| LPM wewnątrz wielokąta | Zaznaczenie i translacja całej figury |
 | LPM na pustym tle | Usunięcie zaznaczenia |
-| PPM na elemencie | Zaznaczenie elementu i menu dostępnych operacji |
-| Shift+F10 | Menu dla aktualnego zaznaczenia, bez wskazywania nowego elementu |
-| Esc podczas gestu | Odtworzenie całego dokumentu sprzed przeciągania |
-| Esc podczas wyboru pary | Anulowanie wyboru drugiego odcinka |
+| PPM na elemencie | Wskazanie elementu i menu kontekstowe |
+| Shift+F10 | Menu bieżącego zaznaczenia |
+| Esc podczas przeciągania | Odtworzenie dokumentu sprzed gestu |
+| Esc podczas wskazywania pary | Anulowanie wyboru drugiego odcinka |
 | Esc bez aktywnej operacji | Usunięcie zaznaczenia |
-| Delete | Usunięcie zaznaczonego wierzchołka, jeśli figura ma więcej niż trzy wierzchołki |
-| F1 | Otwarcie lub przywołanie pomocy; anuluje aktywny gest i wybór pary |
-| Przycisk Dokumentacja | Otwarcie lub przywołanie pełnej dokumentacji; również anuluje aktywny gest i wybór pary |
+| Delete | Usunięcie wierzchołka z zachowaniem co najmniej trzech wierzchołków figury |
+| Ctrl+O | Wczytanie sceny |
+| Ctrl+Shift+S | Zapis sceny pod wybraną nazwą |
+| F1 | Otwarcie lub przywołanie instrukcji obsługi |
+| Przycisk Dokumentacja | Otwarcie lub przywołanie pełnej dokumentacji |
 
-Jeśli pod kursorem znajduje się kilka elementów, program sprawdza je w kolejności: **uchwyt → wierzchołek → krawędź → wnętrze**. W punkt lub krawędź można trafić z odległości do 6 pikseli. Wierzchołki są oznaczone kółkami o promieniu 5 pikseli, a uchwyty kwadratami o boku 10 pikseli. Gdy wnętrza figur nakładają się, wybierana jest ostatnia z nich w kolejności dokumentu.
+Wskazywanie ma ustaloną kolejność: **uchwyt -> wierzchołek -> krawędź -> wnętrze**. Tolerancja punktów i krawędzi wynosi 6 jednostek świata, co przy bieżącej skali odpowiada 6 px. Wierzchołki są oznaczone okręgami o promieniu 5 px, a uchwyty kwadratami o boku 10 px. Przy nakładaniu się wnętrz wybierana jest figura rysowana jako ostatnia.
 
-Miejsce złapania wierzchołka lub uchwytu jest zachowywane: kliknięcie blisko środka nie powoduje nagłego przeskoku. Po zaakceptowanym przeliczeniu punkt ma dokładnie pozycję wynikającą z kursora i tego przesunięcia.
+Przeciąganie zachowuje przesunięcie między kursorem a wskazanym punktem, ograniczając zmianę położenia przy rozpoczęciu gestu. Po zaakceptowanej aktualizacji punkt pozostaje dokładnie w pozycji wynikającej z kursora i tego przesunięcia.
 
-Przeciąganie przechwytuje mysz także poza oknem. Utrata przechwycenia, utrata fokusu sceny na rzecz innego okna lub minimalizacja anuluje gest i przywraca dokument sprzed jego rozpoczęcia. Przejście fokusu do przycisków algorytmu nie anuluje operacji samo w sobie.
-
-Pomoc można zostawić otwartą i wrócić do sceny. W jej oknie lista wybiera temat, Tab przechodzi między kontrolkami, tekst można zaznaczać i kopiować przez Ctrl+C, a Esc, Zamknij i krzyżyk zamykają pomoc. Ponowne F1 w scenie przywołuje istniejące okno bez zmiany tematu.
+Aplikacja przechwytuje mysz na czas gestu. Utrata przechwycenia, utrata fokusu na rzecz innego okna lub minimalizacja anuluje przeciąganie. Przejście fokusu do przycisków trybu rysowania nie anuluje operacji. Otwarcie pomocy lub dokumentacji anuluje aktywny gest i wybór pary. Okna informacyjne można zamknąć przez Esc, przycisk Zamknij lub polecenie systemowe zamknięcia okna.
 
 ## 3. Operacje i ograniczenia
 
+### Zapis i odczyt sceny
+
+**Plik → Zapisz jako...** zapisuje geometrię, uchwyty, wygięcia łuków, grubości krawędzi, relacje oraz ustawienia i źródła ciągłości. Do danych trwałych należą również identyfikatory i liczniki nowych obiektów. Plik nie przechowuje zaznaczenia, stanu gestu, algorytmu renderowania ani parametrów okna.
+
+**Plik → Załaduj...** odczytuje i weryfikuje cały plik przed zastąpieniem dokumentu. Odczyt nie przesuwa punktów i nie naprawia relacji solverem. Nieznana wersja, błędna struktura lub niespełnione ograniczenia powodują odrzucenie pliku z zachowaniem bieżącej sceny. Poprawny odczyt usuwa zaznaczenie i zachowuje wybrany tryb renderowania.
+
+Przed otwarciem dialogu pliku aplikacja kończy gest w ostatnim zaakceptowanym stanie i anuluje wybór pary. Anulowanie dialogu nie wykonuje operacji plikowej. Wczytanie poprawnej sceny zastępuje dotychczasowy dokument bez dodatkowego potwierdzenia niezapisanych zmian.
+
+Zapis odbywa się przez plik tymczasowy w katalogu docelowym. Zastąpienie pliku następuje po zakończeniu zapisu. Format `.cadscene` jest tekstowy i wersjonowany; obowiązują limity 16 MiB oraz 100000 rekordów na sekcję. Szczegóły określa [specyfikacja formatu](scene-format.md).
+
+### Grubość krawędzi
+
+Polecenie **Grubość krawędzi...** w menu PPM ustawia wartość całkowitą od **1 do 32 px** dla wskazanego odcinka, Béziera lub łuku. Domyślna wartość wynosi 2 px. Zaznaczenie i wskazanie pierwszej krawędzi relacji równoległości zwiększają szerokość renderowania o 2 px.
+
+Grubość jest właściwością wyglądu i nie wpływa na współrzędne ani równania ograniczeń. Konwersja zachowuje wartość, obie części podziału ją dziedziczą, a odcinek po usunięciu wierzchołka przejmuje grubość krawędzi poprzedzającej. Pliki wersji 1 otrzymują wartość domyślną. Tolerancja wskazywania nadal odnosi się do geometrycznego obrysu.
+
 ### Długość odcinka
 
-1. Kliknij PPM odcinek i wybierz **Ustaw stałą długość...**.
-2. Okno podpowiada aktualną długość krawędzi. Wpisz liczbę większą od zera, np. 120.
-3. Zatwierdź OK albo anuluj bez zmian.
+**Ustaw stałą długość...** otwiera dialog z aktualną długością. Zatwierdzenie dodatniej wartości dodaje relację i uruchamia solver z początkiem odcinka unieruchomionym w bieżącej pozycji. Pozostałe punkty mogą zmienić położenie, aby spełnić wszystkie aktywne relacje.
 
-Akceptowane są kropka lub przecinek dziesiętny, np. `12.5` i `12,5`, a także zapis wykładniczy, np. `1e2`. Wartości niedodatnie, NaN, nieskończoności i częściowo poprawny tekst są odrzucane.
-
-Podczas zmiany długości pierwszy koniec krawędzi pozostaje w miejscu, a pozostałe punkty mogą się dostosować. Przy istniejącej relacji menu udostępnia **Zmień stałą długość...** i **Usuń ograniczenie długości**. Napis `L=...` na scenie pokazuje zadaną wartość. Usunięcie relacji zachowuje aktualną geometrię.
+Pole liczbowe akceptuje kropkę, przecinek dziesiętny i zapis wykładniczy, np. `12.5`, `12,5`, `1e2`. Odrzuca wartości niedodatnie, NaN, nieskończoności i niepełne zapisy liczbowe. Istniejącą relację można zmodyfikować przez **Zmień stałą długość...** lub usunąć przez **Usuń ograniczenie długości**. Etykieta `L=...` przedstawia wartość zadaną. Usunięcie relacji nie zmienia geometrii.
 
 ### Równoległość
 
-1. PPM na pierwszym odcinku → **Ustaw równoległość z...**.
-2. Pierwszy odcinek staje się pomarańczowy, a scena pokazuje komunikat wyboru.
-3. Kliknij LPM drugi odcinek. Może należeć do innego wielokąta.
-4. Esc anuluje wybór. Powtórna para, ta sama krawędź lub niepoprawna relacja nie jest dodawana.
+**Ustaw równoległość z...** rozpoczyna wybór drugiego odcinka. Pierwszy jest oznaczony kolorem pomarańczowym. Wskazanie drugiego, również z innego wielokąta, dodaje relację po poprawnym rozwiązaniu układu. Esc anuluje wybór. Powtórzona para, wybór tej samej krawędzi i niepoprawne odwołania są odrzucane.
 
-Pary są oznaczane `P1`, `P2` itd. Menu **Usuń równoległość** przy odcinku zawiera jego pary; wybranie jednej usuwa tylko ją. Numery są etykietami aktualnej kolejności relacji i mogą się zmienić po usunięciu. Odcinki mogą być równoległe także wtedy, gdy w kolejności obiegu figur są skierowane w przeciwne strony.
+Etykiety `P1`, `P2` itd. identyfikują pary według bieżącej kolejności relacji. Podmenu **Usuń równoległość** usuwa wybraną parę. Relacja dopuszcza przeciwne zwroty odcinków. Jeden odcinek może należeć do wielu par i jednocześnie mieć zadaną długość. Długość i równoległość dotyczą wyłącznie odcinków.
 
-Jeden odcinek może mieć zadaną długość i wiele różnych par równoległości. Oba rodzaje relacji dotyczą wyłącznie prostych odcinków. Krzywe mają warunki ciągłości.
+### Zmiany topologii
 
-### Dodawanie i usuwanie wierzchołków
+**Podziel krawędź** dodaje wierzchołek w ustalonym punkcie. Pozycja kliknięcia identyfikuje krawędź, a nie parametr podziału.
 
-PPM na krawędzi → **Podziel krawędź** dodaje punkt w ustalonym miejscu, opisanym w tabeli. Miejsce kliknięcia służy jedynie do wskazania krawędzi. Oznaczenie Default przy nowym punkcie znaczy, że klasę ciągłości nadał program; Explicit oznacza wybór użytkownika.
-
-| Typ krawędzi | Wynik podziału |
+| Typ | Wynik |
 | --- | --- |
-| Odcinek | Dwa odcinki przez środek; nowy wierzchołek ma G0/Default |
-| Bézier | Dwie krzywe dla podziału parametru `t=0.5`; nowy wierzchołek ma G1/Default |
-| Łuk | Dwa proste odcinki przez punkt łuku dla `t=0.5`; nowy wierzchołek ma G0/Default; kształt się zmienia |
+| Odcinek | Dwa odcinki przez środek; nowy wierzchołek G0/Default |
+| Bézier | Dwie krzywe dla `t=0.5`; nowy wierzchołek G1/Default |
+| Łuk | Dwa odcinki przez punkt łuku dla `t=0.5`; nowy wierzchołek G0/Default |
 
-Sam podział Béziera zachowuje jego kształt. Każda nowa krzywa otrzymuje jednak własny parametr od 0 do 1, więc zmieniają się długości jej pochodnych. Jeśli na zewnętrznych końcach obowiązuje C1, solver może przez to skorygować położenia punktów.
+Podział Béziera zachowuje kształt przed ponownym rozwiązaniem ograniczeń. Każda część ma własny parametr w `[0,1]`, co zmienia długości pochodnych i może wymagać korekty przy utrzymywaniu C1. Podział łuku celowo zmienia kształt przez zastąpienie go odcinkami.
 
-PPM na wierzchołku → **Usuń wierzchołek** lub Delete usuwa punkt i zastępuje dwie sąsiednie krawędzie jednym odcinkiem. Nie można zredukować figury poniżej trzech wierzchołków.
-
-Relacje zastępowanych krawędzi są usuwane, także gdy wskazują krawędź innej figury. Ustawienia ciągłości ocalałych wierzchołków pozostają; pozostałe zależności są ponownie rozwiązywane. Operacje są zatwierdzane tylko przy poprawnym wyniku.
+**Usuń wierzchołek** zastępuje dwie sąsiednie krawędzie jednym odcinkiem. Figura musi zachować co najmniej trzy wierzchołki. Relacje zastępowanych krawędzi są usuwane, a ustawienia ciągłości pozostałych wierzchołków zostają zachowane. Wynik jest zatwierdzany po walidacji i rozwiązaniu pozostałych zależności.
 
 ## 4. Krzywe i ciągłość
 
-### Bézier
+### Krzywa Béziera
 
-PPM na krawędzi → **Zamień na Béziera** tworzy krzywą trzeciego stopnia. Ma ona dwa końce współdzielone z wielokątem i dwa niezależne uchwyty. Przerywany wielobok kontrolny pomaga odczytać kierunki stycznych. Uchwyty przesuwa się LPM.
+**Zamień na Béziera** tworzy krzywą trzeciego stopnia z końcami współdzielonymi z wielokątem i dwoma niezależnymi punktami kontrolnymi. Uchwyty i przerywany wielobok kontrolny umożliwiają edycję kształtu. Początkowo uchwyty leżą w 1/3 i 2/3 cięciwy; solver może dostosować je do ciągłości.
 
-Po konwersji ustawiane jest domyślne G1 na końcach, jeśli użytkownik nie wybrał tam wcześniej klasy jawnie. Jawne ustawienie, także G0, jest zachowywane. Początkowe uchwyty leżą w 1/3 i 2/3 cięciwy, po czym solver może je dostosować do ciągłości.
+Konwersja nadaje domyślne G1 końcom bez wcześniejszego jawnego ustawienia. Wybór użytkownika, również jawne G0, pozostaje zachowany. Menu **Ciągłość wierzchołka** udostępnia klasy:
 
-PPM na wierzchołku przy Bézierze → **Ciągłość wierzchołka**:
-
-| Klasa | Znaczenie |
+| Klasa | Warunek |
 | --- | --- |
-| G0 | Wspólny punkt końcowy, bez zgodności stycznych |
-| G1 | Zgodne kierunki i zwroty stycznych wzdłuż obiegu wielokąta |
-| C1 | Równe pełne wektory pochodnych, łącznie z długością |
+| G0 | Wspólny punkt końcowy |
+| G1 | Zgodne kierunki i zwroty niezerowych stycznych |
+| C1 | Równe wektory pochodnych, również co do długości |
 
-Pochodne odnoszą się do parametru każdego segmentu w `[0,1]`. Dlatego C1 pomiędzy odcinkiem a Bézierem wymaga długości sąsiedniego uchwytu równej 1/3 długości odcinka. Zerowa styczna jest niedopuszczalna dla G1; C1 może porównywać dwa zerowe wektory.
+Pochodne odnoszą się do lokalnego parametru każdego segmentu w `[0,1]`. C1 między odcinkiem a Bézierem wymaga odległości sąsiedniego uchwytu od końca krzywej równej jednej trzeciej długości odcinka. G1 odrzuca zerowe styczne; C1 może porównywać dwa zerowe wektory.
 
-Przy ruchu uchwytu program najpierw próbuje zachować końce jego Béziera. Jeżeli nie uzyska rozwiązania, może dopuścić ich ruch. Inne punkty kontrolne i wierzchołki mogą się dostosować do wspólnych relacji.
+Przy przesuwaniu uchwytu solver początkowo zachowuje końce jego krzywej. Niezbieżna próba może zostać ponowiona z ruchomymi końcami w pozostałym budżecie iteracji. Prowadzony uchwyt pozostaje dokładnie przypięty do pozycji wynikającej z kursora.
 
 ### Łuk okręgu
 
-PPM na krawędzi → **Zamień na łuk okręgu** zachowuje dotychczasowe ustawienia ciągłości. Dopuszcza G0 i G1, z G1 najwyżej na jednym końcu. C1 lub G1/G1 powoduje odrzucenie konwersji; należy wcześniej zmienić ustawienia końców w menu wierzchołka.
+Łuk dopuszcza G0 i G1, przy czym najwyżej jeden koniec może mieć G1. C1 i G1 na obu końcach uniemożliwiają konwersję. Przy G0/G0 implementacja wymusza półokrąg o promieniu równym połowie cięciwy. Pojedyncze G1 wyznacza wygięcie analitycznie ze stycznej sąsiedniej krawędzi.
 
-Przy G0 na obu końcach łuk jest półokręgiem. Jego promień to połowa odległości między końcami, czyli połowa długości cięciwy. Przy jednym G1 łuk jest analitycznie dopasowywany do stycznej sąsiada. Jeśli sąsiadujące łuki mają wspólne G1, łuk o niższym ID pozostaje referencją, a drugi jest dopasowywany. Gdy wymagana styczna nie wyznacza dopuszczalnego skończonego łuku, operacja jest odrzucana.
+Dla dwóch łuków połączonych G1 łuk o niższym ID stanowi odniesienie, a drugi jest dopasowywany. Brak skończonego łuku zgodnego ze styczną powoduje odrzucenie operacji. Końce muszą być różne. Konwersja tworzy dodatnie wygięcie; interfejs nie udostępnia osobnego polecenia zmiany jego znaku.
 
-Nowy łuk ma dodatni parametr wygięcia. Zmiana strony nie jest osobnym poleceniem UI. Końce łuku muszą być różne.
+### Konwersje typów
 
-### Konwersje
-
-Menu krawędzi umożliwia przełączanie między odcinkiem, Bézierem i łukiem. Bieżący typ jest nieaktywny. Konwersja odcinka na krzywą usuwa jego zadaną długość i wszystkie pary równoległości. Powrót do odcinka nie przywraca dawnych relacji. Nieudana operacja zachowuje poprzedni typ, geometrię i relacje.
+Menu umożliwia konwersję między odcinkiem, Bézierem i łukiem. Przejście z odcinka na krzywą usuwa relacje długości i równoległości tej krawędzi. Konwersja odwrotna nie odtwarza tych relacji. Nieudana operacja zachowuje wcześniejszą geometrię i ograniczenia.
 
 ## 5. Założenia i sytuacje wyjątkowe
 
-- Wielokąty mogą się samoprzecinać. Ich wnętrze określa reguła parzystości.
-- Figury są przygotowane w kodzie sceny. Interfejs edytuje ich wierzchołki i krawędzie; nie tworzy ani nie usuwa całych wielokątów.
-- Przy przesuwaniu całej figury wszystkie jej wierzchołki i uchwyty przesuwają się o ten sam wektor. Kształt, długości i kierunki krawędzi pozostają takie same. Dzięki temu zachowane są też ciągłość i równoległości, a inne figury pozostają na miejscu.
-- Środek Béziera w operacji podziału oznacza `t=0.5`, a nie połowę długości krzywej. Podział łuku świadomie zastępuje go odcinkami, aby nowe łuki G0/G0 nie naruszały reguły półokręgu.
-- Przy odrzuconym ruchu na scenie pozostaje **ostatni poprawny podgląd** i pojawia się ostrzeżenie. Przeciąganie może być kontynuowane. Puszczenie LPM zachowuje ostatni zaakceptowany podgląd, a Esc przywraca stan sprzed całego gestu.
-- Brak zbieżności nie dowodzi matematycznej sprzeczności: przyczyną może być także degeneracja, ograniczony budżet iteracji lub trudności numeryczne. Program nie usuwa relacji, aby wymusić sukces.
-- Domyślna skala wynosi 1 piksel na jednostkę świata; początek jest odsunięty o 20 pikseli od lewej i dolnej krawędzi. Oś świata Y jest skierowana w górę. Zmiana rozmiaru okna nie zmienia współrzędnych dokumentu.
-- Przycinanie ogranicza rysowanie do widoku, ale skrajne wartości `double` mogą przepełnić obliczenia. Takie wejście lub kandydat jest odrzucany; program jest przeznaczony do niewielkiej sceny demonstracyjnej.
-- Program nie implementuje zapisu plików, pełnej historii undo/redo, zoomu, przyciągania ani dodatkowej prostopadłości. Anulowanie pojedynczego gestu działa niezależnie od historii zmian.
+- Wielokąty są zamkniętymi cyklami. Samoprzecięcia są dopuszczalne; wnętrze określa reguła parzystości.
+- Interfejs edytuje figury ze sceny początkowej i plików, bez tworzenia i usuwania całych wielokątów.
+- Translacja przesuwa wszystkie wierzchołki i uchwyty figury o ten sam wektor. Zachowuje długości, kierunki, ciągłość i wygięcia; pozostałe figury nie zmieniają położenia.
+- Podział dla `t=0.5` oznacza połowę przedziału parametru, a nie połowę długości krzywej.
+- Odrzucona próbka ruchu pozostawia ostatni poprawny podgląd i komunikat. Zwolnienie LPM zatwierdza ten podgląd; Esc odtwarza stan sprzed gestu.
+- Brak zbieżności może wynikać z konfliktu, degeneracji lub ograniczeń numerycznych. Nie dowodzi matematycznej sprzeczności. Solver nie usuwa relacji w celu wymuszenia wyniku.
+- Jedna jednostka świata odpowiada jednemu pikselowi. Początek układu jest odsunięty o 20 px od lewego i dolnego brzegu sceny; oś Y jest skierowana w górę.
+- Obliczenia wykorzystują `double`. Przepełnienia i wartości nieskończone powodują odrzucenie danych lub kandydata. Zakres obejmuje sceny demonstracyjne, bez deklaracji wydajności dla tysięcy obiektów.
+- Projekt nie obejmuje pełnej historii undo/redo, skalowania widoku, przyciągania ani dodatkowej relacji prostopadłości. Anulowanie gestu działa niezależnie od historii zmian.
 
 ## 6. Model danych i architektura
 
-| Warstwa | Pliki i odpowiedzialność |
+Architektura rozdziela reprezentację geometrii, operacje edytora i adapter platformy.
+
+| Moduł | Odpowiedzialność |
 | --- | --- |
-| Rdzeń | `cad_core`: geometria, dokument, walidacja, relacje i solver; bez nagłówków Windows |
-| Edytor | `src/editor`: `EditorSession`, zaznaczenie, wykrywanie wskazanego elementu, przeciąganie i zatwierdzanie zmian; również bez WinAPI |
-| Rasteryzacja | `src/render`: neutralne piksele Bresenhama, przycinanie i wybór algorytmu |
-| Frontend | `src/platform/win32` i `Projecr1_GK.cpp`: komunikaty, okna, menu, dialogi, bufor DIB i rysowanie |
+| `cad_core/model` | Własność obiektów, topologia, walidacja i operacje dokumentu |
+| `cad_core/geometry` | Wektory, ewaluacja i próbkowanie krzywych |
+| `cad_core/constraints`, `cad_core/solver` | Reszty równań i wspólne rozwiązywanie ograniczeń |
+| `cad_core/io` | Wersjonowana serializacja przez strumienie |
+| `src/editor` | Zaznaczenie, identyfikacja wskazanego elementu i cykl edycji |
+| `src/render` | Przenośne przycinanie i rasteryzacja |
+| `src/platform/win32`, `Projecr1_GK.cpp` | Okna, zdarzenia, dialogi, bufory i prezentacja |
 
-`Document` jest właścicielem trzech map: wierzchołków, krawędzi i wielokątów. Używa silnych typów `VertexId`, `EdgeId`, `PolygonId`, zawierających 64-bitową wartość. Zero oznacza niepoprawne ID. Encje są powiązane przez ID, a nie wskaźniki do elementów kontenera.
+`Document` przechowuje mapy obiektów i kolekcje relacji. Typy `VertexId`, `EdgeId` i `PolygonId` zawierają 64-bitowe identyfikatory; zero oznacza wartość niepoprawną. Odwołania między encjami wykorzystują ID, bez przechowywania wskaźników do elementów kontenerów.
 
-`Vertex` zawiera ID, pozycję `Vec2` z dwiema współrzędnymi `double` oraz ustawienie ciągłości. Ustawienie przechowuje klasę G0/G1/C1 i pochodzenie Default/Explicit.
+`Vertex` zawiera pozycję i ciągłość z pochodzeniem `Default` lub `Explicit`. `Edge` określa końce, grubość renderowania i wariant `EdgeGeometry`: `LineSegment`, `CubicBezier` z dwoma uchwytami albo `CircularArc` z parametrem `bulge`. `Polygon` przechowuje uporządkowane listy wierzchołków i krawędzi tworzących cykl.
 
-`Edge` zawiera ID, ID obu końców oraz wariant geometrii:
+`EditorSession` jest właścicielem dokumentu, zaznaczenia i stanu gestu. Zmiany geometrii wykonywane są na kopii. Wynik zastępuje dokument po walidacji i rozwiązaniu relacji; migawka z początku gestu umożliwia anulowanie przeciągania. Zmiany wyglądu nie wymagają solvera.
 
-| Wariant | Dodatkowe dane |
-| --- | --- |
-| `LineSegment` | Brak; końce wynikają z wierzchołków |
-| `CubicBezier` | Dwie pozycje punktów kontrolnych |
-| `CircularArc` | Niezerowy parametr `bulge` |
-
-`Polygon` przechowuje uporządkowane listy ID wierzchołków i krawędzi. Krawędź `i` łączy wierzchołek `i` z `(i+1) mod n`. Sąsiednie segmenty używają tego samego wierzchołka, dlatego G0 jest spełnione konstrukcyjnie.
-
-Długości i pary równoległości są przechowywane w wektorach dokumentu. Łączą krawędzie przez ID. Ciągłość jest metadanymi wierzchołka; aktywne połączenia są zbierane na podstawie topologii i typów sąsiednich krawędzi.
-
-`EditorSession` udostępnia dokument do odczytu i kontroluje edycję. Gest jest wariantem przeciągania wierzchołka, uchwytu lub figury. Na czas przeciągania zapamiętuje kopię dokumentu sprzed ruchu, aby można było anulować gest. Zapisuje też miejsce złapania punktu lub początkową pozycję myszy przy przesuwaniu figury. Polecenia wymagające rozwiązania relacji pracują na kopii i zatwierdzają ją wyłącznie po sukcesie.
-
-Walidator sprawdza spójność ID, połączeń i cykli, skończoność współrzędnych, geometrię i dozwolone klasy łuków. Samo `validate()` nie oznacza spełnienia numerycznych równań wszystkich relacji; za to odpowiada solver.
-
-Inny frontend może używać `EditorSession` i `Document`, zastępując adapter wejścia oraz renderowanie. Typy `HWND`, `HDC`, pióra i pamięć DIB pozostają w warstwie WinAPI.
+WinAPI przekazuje do sesji pozycje świata i polecenia. Renderer odczytuje model i zaznaczenie. Zastąpienie interfejsu wymaga implementacji wejścia i prezentacji przy zachowaniu rdzenia i sesji. Szczegóły zawiera [opis architektury](architecture/README.md).
 
 ## 7. Algorytmy geometryczne i rysowanie
 
-### Bézier: baza potęgowa i różnice progresywne
+### Ewaluacja i próbkowanie Béziera
 
-Dla punktów `P0, P1, P2, P3` używamy:
+Krzywa trzeciego stopnia jest zapisywana w bazie potęgowej:
 
 ```text
 B(t) = a*t³ + b*t² + c*t + d
@@ -193,171 +182,157 @@ c = 3*(P1 - P0)
 d = P0
 ```
 
-Funkcja `bezierPoint` wyznacza pojedynczy punkt schematem Hornera i jest używana w testach. Podczas rysowania i sprawdzania, co wskazuje mysz, aplikacja korzysta z `sampleBezier`. Ta funkcja oblicza całą serię punktów przyrostowo: przygotowuje kilka różnic, a potem aktualizuje je przez dodawanie. Dla `h=1/N` wartości początkowe wynoszą:
+`bezierPoint` wykorzystuje schemat Hornera do ewaluacji pojedynczego punktu. `sampleBezier` stosuje różnice progresywne przy kroku `h=1/N`:
 
 ```text
 point = P0
 Δ1 = a*h³ + b*h² + c*h
 Δ2 = 6*a*h³ + 2*b*h²
 Δ3 = 6*a*h³
+
+point += Δ1
+Δ1 += Δ2
+Δ2 += Δ3
 ```
 
-W każdym kroku wykonywane są dodawania: `point += Δ1`, `Δ1 += Δ2`, `Δ2 += Δ3`. Wynik ma `N+1` punktów; końce są ustawione dokładnie na `P0` i `P3`. Wspólne próbkowanie krawędzi używa domyślnie 100 odcinków na krzywą.
+Trzecia różnica jest stała, dlatego aktualizacja wymaga wyłącznie dodawania. Wynik zawiera `N+1` punktów; dokładne przypisanie końców ogranicza wpływ zaokrągleń. Wspólne `sampleEdge` domyślnie tworzy 100 odcinków na krzywą. Próbki wykorzystują rysowanie i identyfikacja wskazanego elementu. Podział dla `t=0.5` realizuje algorytm de Casteljau.
 
-Podział Béziera dla `t=0.5` używa de Casteljau: kolejnych środków odcinków wieloboku kontrolnego. Wynikiem są dwa zestawy czterech punktów, mające wspólny punkt podziału.
+### Łuki i styczne
 
-### Łuk
+Reprezentacja `bulge=tan(theta/4)` pozwala odtworzyć środek, promień i kąt łuku z jego końców. Próbki wynikają z parametryzacji okręgu `C+r*(cos(phi),sin(phi))`. `updateArcBulges` przywraca półokręgi G0/G0 lub dopasowuje pojedyncze G1 do stycznej sąsiada. Wygięcie jest obliczane analitycznie i nie stanowi osobnej niewiadomej solvera.
 
-Łuk wyznaczają końce i `bulge = tan(sweep/4)`. Znak wygięcia określa zwrot przebiegu w układzie świata. Z tych danych obliczane są środek, promień, kąt początkowy i kąt przebiegu. Punkty wynikają z parametryzacji okręgu; końce próbkowania są zachowane dokładnie.
+### Odległość od krawędzi i wnętrze figury
 
-`updateArcBulges` ustawia `±1` dla G0/G0 albo analitycznie dopasowuje wygięcie do stycznej przy G1. Wszystkie wygięcia są zatwierdzane razem po sprawdzeniu dopuszczalności. `bulge` nie jest osobną zmienną numerycznego solvera.
-
-### Trafianie i wnętrze
-
-Odległość punktu od odcinka jest obliczana przez rzut:
+Odległość punktu od odcinka wynika z rzutu ortogonalnego z ograniczeniem parametru:
 
 ```text
-t = clamp(dot(P-A, B-A) / |B-A|², 0, 1)
-Q = A + t*(B-A)
+t = clamp(dot(P-A,B-A)/|B-A|²,0,1)
+Q = A+t*(B-A)
 distanceSquared = |P-Q|²
 ```
 
-Odcinek o zbieżnych końcach jest traktowany jak punkt. Dla krzywej mierzone są odległości do kolejnych odcinków jej próbkowanej łamanej. Wybierana jest najbliższa krawędź w tolerancji.
+Odcinek zerowy jest traktowany jak punkt. Dla krzywej analizowane są segmenty łamanej, a wybór dotyczy najbliższej krawędzi w tolerancji. Test wnętrza stosuje poziomy promień i regułę even-odd: nieparzysta liczba przecięć oznacza wnętrze, również przy samoprzecięciach.
 
-Aby sprawdzić wnętrze figury, prowadzimy od wskazanego punktu poziomy promień i liczymy jego przecięcia z konturem. Nieparzysta liczba oznacza wnętrze, parzysta — zewnętrze. Reguła działa także dla samoprzecięć. Rysowanie i wykrywanie trafień używają wspólnego `sampleEdge`, więc sprawdzany kontur odpowiada łamanej widocznej na ekranie.
+### Przycinanie i rasteryzacja
 
-### GDI, Bresenham i bufor
+Algorytm **Cohena-Sutherlanda** przycina odcinki w `double`. Kody bitowe opisują położenie końców względem prostokąta i umożliwiają przyjęcie, odrzucenie lub wyznaczenie przecięcia. Konwersja do współrzędnych całkowitych następuje po przycięciu.
 
-Natywne radio buttony **GDI / Bresenham** wybierają algorytm dla wszystkich odcinków geometrii, także fragmentów próbkowanych krzywych. GDI używa `MoveToEx` i `LineTo`. Własny Bresenham obsługuje wszystkie oktanty i odcinek zerowy; dopisuje oba końce do roboczego wektora pikseli.
+Tryb **GDI** korzysta z `MoveToEx` i `LineTo`. Własny **Bresenham** wyznacza piksele przez całkowitoliczbową aktualizację błędu dla wszystkich ośmiu oktantów. Kwadratowy pędzel rozszerza ślad zgodnie z grubością krawędzi.
 
-Bresenham najpierw wyznacza ślad o grubości jednego piksela. Zaczyna w pierwszym końcu odcinka i utrzymuje całkowitoliczbowy błąd, który pomaga wybrać kolejny piksel. W każdym kroku na podstawie podwojonego błędu decyduje, czy przesunąć X, Y, czy obie współrzędne. Znaki przyrostów określają kierunek ruchu, dlatego jeden kod obsługuje linie we wszystkich ośmiu oktantach. Pętla kończy się po zapisaniu drugiego końca. Grubość linii jest dodawana później przez pędzel opisany poniżej.
+Tryb **Wu (AA)** zachowuje pozycje ułamkowe. Dla 1 px klasyczny algorytm Xiaolina Wu rozdziela pokrycie pomiędzy sąsiadów z wagami `1-frac(y)` i `frac(y)` oraz korektą końców. Szersze obrysy wykorzystują poszerzenie geometryczne z okrągłymi końcami i przybliżenie pokrycia:
 
-Przed konwersją na `int` współrzędne ekranowe `double` są przycinane algorytmem Cohena–Sutherlanda. Kody bitowe klasyfikują końce względem granic, wspólny bit pozwala odrzucić odcinek, a pozostałe przypadki są przycinane przez przecięcia z granicami.
+```text
+alpha = clamp(width/2 + 0.5 - distanceToSegment,0,1)
+colorOut = alpha*colorLine + (1-alpha)*colorBackground
+```
 
-W trybie własnym piksele są zapisywane bezpośrednio do odgórnego 32-bitowego DIB, pod indeksem `y*width+x`, w formacie `0x00RRGGBB`. Program nie wywołuje `SetPixel` dla każdego punktu. Roboczy wektor zachowuje pojemność między odcinkami w klatce. Kwadratowy pędzel ma szerokość 2 pikseli dla zwykłej krawędzi i 4 dla wyróżnienia; jego zapis jest ograniczony do obszaru sceny. Na przekątnych ten pędzel daje inny ślad niż pióro GDI.
+Grubość szerszego obrysu jest mierzona prostopadle do segmentu. Maksimum pokryć segmentów jednej krawędzi tworzy zaokrąglone łączenia bez zwężeń przy zmianie oktantu. Dla 1 px sumowane są częściowe przedziały końców. Mieszanie RGB odbywa się bez korekcji gamma. Zerowy segment 1 px ma pokrycie kwadratowe, a szerszy wariant okrągłe.
 
-Klatka powstaje w `BackBuffer`: tło, wszystkie krawędzie, następnie dekoracje i pasek. Jedno `GdiFlush` przed partią zapisów CPU kończy wcześniejsze rysowanie GDI. Uchwyty, wierzchołki, etykiety i linie pomocnicze są później rysowane przez GDI. `BitBlt` prezentuje bufor. Przy niedostępnym buforze pozostaje bezpośrednie rysowanie GDI.
+### Buforowanie i obsługa ruchu
 
-`WM_MOUSEMOVE` zapamiętuje najnowszą próbkę zamiast rozwiązywać wszystkie komunikaty osobno. Timer o zadanym interwale 1 ms przelicza podgląd; rzeczywisty termin zależy od kolejki i systemu Windows. Puszczenie LPM natychmiast przelicza końcową pozycję. Awaria utworzenia timera przywraca bezpośrednią obsługę ruchu.
+Klatka powstaje w odgórnym, 32-bitowym DIB. Własne algorytmy zapisują `0x00RRGGBB` bez wywoływania `SetPixel` dla każdego punktu. `GdiFlush` kończy operacje tła przed zapisem CPU. Po geometrii rysowane są dekoracje GDI, a `BitBlt` prezentuje kompletną klatkę. Brak bufora powoduje przejście do bezpośredniego rysowania GDI.
+
+Koalescencja ruchu zachowuje najnowszą oczekującą pozycję. Timer o zadanym interwale 1 ms aktualizuje podgląd, ograniczając przeliczanie nieaktualnych próbek. Termin obsługi zależy od systemu i kolejki. Zwolnienie LPM wymusza ocenę końcowej pozycji; błąd utworzenia timera przywraca bezpośrednią obsługę ruchu.
 
 ## 8. Mechanizm ograniczeń i solver
 
-### Równania
+### Reszty równań
 
-Solver oblicza, o ile każdy warunek jest niespełniony. Tę liczbę nazywamy błędem lub resztą. Jeśli odcinek ma długość 10, a powinien mieć 12, jego błąd wynosi `10 - 12 = -2`. Dla poprawnego odcinka jest równy zeru.
+Każde ograniczenie jest reprezentowane przez resztę, której wartość zerowa oznacza spełnienie warunku. Odcinek długości 10 przy wartości zadanej 12 ma resztę `-2`.
 
-| Relacja | Jak obliczamy błąd |
+| Relacja | Reszta |
 | --- | --- |
-| Długość | `length(B-A) - L` |
-| Równoległość | `cross(unit(d1), unit(d2))`; dopuszcza przeciwne zwroty |
-| G1 | `atan2(cross(unit(Tin), unit(Tout)), dot(unit(Tin), unit(Tout)))` |
-| C1 | Dwie składowe `Tout - Tin` |
+| Długość | `length(B-A)-L` |
+| Równoległość | `cross(unit(d1),unit(d2))` |
+| G1 | `atan2(cross(unit(Tin),unit(Tout)),dot(unit(Tin),unit(Tout)))` |
+| C1 | Dwie składowe wektora `Tout-Tin` |
 
-W tabeli `length` oznacza długość wektora, `unit` jego kierunek jednostkowy, a `cross` i `dot` odpowiednio iloczyn wektorowy 2D i skalarny. `Tin` i `Tout` to pochodne segmentu dochodzącego do wierzchołka i segmentu z niego wychodzącego.
+`Tin` i `Tout` oznaczają pochodne krawędzi dochodzącej i wychodzącej. Dla odcinka pochodna wynosi `B-A`, a dla Béziera na końcach `3*(P1-P0)` i `3*(P3-P2)`. Pochodna łuku uwzględnia kąt przebiegu. G1 rozróżnia zwroty stycznych, natomiast równoległość odcinków dopuszcza zwroty przeciwne.
 
-Pochodna odcinka to `B-A`. Dla Béziera na początku wynosi `3*(P1-P0)`, a na końcu `3*(P3-P2)`. Dla łuku pochodzi z parametryzacji okręgu i uwzględnia kąt przebiegu. G1 porównuje również zwrot; sama współliniowość nie wystarcza.
+### Metoda rozwiązania
 
-### Przebieg rozwiązania
+`solvePointConstraintSystem`, wywoływana przez publiczne `solveConstraints`, realizuje tłumioną metodę Gaussa-Newtona z krokiem typu Levenberga-Marquardta i redukcją długości kroku.
 
-Program zmienia położenia punktów małymi krokami, tak aby zmniejszać łączny błąd. Współrzędne przeciąganego punktu są przy tym zablokowane w pozycji wyznaczonej przez kursor. Tłumienie ogranicza rozmiar poprawek, a sprawdzanie kolejnych prób pozwala odrzucić krok, który pogarsza wynik.
-
-W aplikacji tę pracę wykonuje `solveConstraints`, korzystając z `solvePointConstraintSystem`. Starsza ścieżka z `solveWithJacobian` pozostała na potrzeby testów. Poniższy opis dotyczy solvera używanego podczas edycji.
-
-1. Utworzenie kandydata dokumentu, dopasowanie wygięć łuków, walidacja wejścia i zebranie aktywnych połączeń.
-2. Przypięcie prowadzonego wierzchołka lub uchwytu dokładnie w żądanej pozycji. Jego współrzędne są wyłączone z niewiadomych.
-3. Zebranie pozostałych wierzchołków i uchwytów uczestniczących w relacjach. Każdy punkt daje dwie kolumny: X i Y. Relacje mogą obejmować różne figury.
-4. Obliczenie wektora reszt i numerycznego Jacobiego. Długości i C1 są normalizowane skalą geometrii; kąty i równoległość pozostają bezwymiarowe.
-5. Wyznaczenie tłumionej korekty przez gęsty układ liniowy z wyborem elementu głównego:
+1. Przygotowanie kopii dokumentu, dopasowanie łuków i walidacja wejścia.
+2. Zebranie relacji i wolnych punktów; prowadzony punkt oraz dodatkowo unieruchomione wierzchołki są wyłączone z niewiadomych.
+3. Obliczenie reszt, skali geometrii i numerycznej macierzy Jacobiego.
+4. Rozwiązanie gęstego układu liniowego przez eliminację Gaussa z częściowym wyborem elementu głównego:
 
    ```text
-   (J*Jᵀ + λ*I) * y = -Fscaled
-   deltaNormalized = Jᵀ * y
-   deltaWorld = geometryScale * deltaNormalized
+   (J*Jᵀ + λ*I)*y = -Fscaled
+   deltaNormalized = Jᵀ*y
+   deltaWorld = geometryScale*deltaNormalized
    ```
 
-   `J` to macierz Jacobiego, `Fscaled` to wektor błędów po przeskalowaniu, `λ` określa tłumienie, a `I` jest macierzą jednostkową. Wektor `y` jest pomocniczym wynikiem rozwiązania układu. Ostateczna poprawka `deltaWorld` podaje, o ile przesunąć poszczególne współrzędne.
+5. Ocena próbnej geometrii z ponownym dopasowaniem łuków. Redukcja kroku i zmiana tłumienia służą uzyskaniu spadku normy reszt lub spełnienia wszystkich tolerancji.
+6. Przy niemal prostopadłych odcinkach dopuszczona jest awaryjna próba ruchu pojedynczej współrzędnej, przyjmowana wyłącznie po zmniejszeniu normy.
+7. Kontrola relacji, topologii i dokładnego przypięcia punktów. Dopiero zbieżny wynik zastępuje dokument wejściowy.
 
-6. Próby kroku z ponownym dopasowaniem łuków, zmniejszaniem kroku i zmianą tłumienia. Akceptowany jest spadek normy błędu lub spełnienie wszystkich tolerancji. Przy nieudanym kroku w sytuacji bliskiej prostopadłości możliwy jest próbny ruch pojedynczej wolnej współrzędnej, również wymagający spadku błędu.
-7. Ponowne sprawdzenie relacji, skończoności, geometrii i dokładnego przypięcia punktu. Dopiero sukces zatwierdza dokument. Niepowodzenie zachowuje stan wejściowy solvera.
+`J` oznacza Jacobian, `Fscaled` znormalizowane reszty, `λ` tłumienie, a `I` macierz jednostkową. Wektor `y` jest pomocniczy. Limit iteracji obejmuje zaakceptowane poprawki współrzędnych, nie wszystkie próby ani czas wykonania. Rozwiązanie lokalne nie musi być jedyne ani globalnie najbliższe początkowej geometrii.
 
-Nie ma gwarancji znalezienia rozwiązania globalnego ani jedynego, najbliższego układu. Tłumienie pozwala obsługiwać układy niedookreślone i nadmiarowe, ale nie zastępuje końcowej kontroli reszt.
+### Jacobian i normalizacja
 
-### Macierz Jacobiego i skala
+Wiersz odpowiada pojedynczej reszcie, a kolumna współrzędnej wolnego punktu w kolejności `x0,y0,x1,y1,...`. G1 dodaje jeden wiersz, C1 dwa, a G0 żadnego. Pochodne są przybliżane różnicami skończonymi w przód na kopii dokumentu.
 
-Macierz Jacobiego opisuje, jak niewielkie przesunięcie każdej współrzędnej wpływa na błędy warunków. Kolumna odpowiada współrzędnej X lub Y konkretnego punktu, a wiersz pojedynczemu błędowi. Warunek C1 daje dwa wiersze, bo porównuje obie składowe pochodnej.
+Krok wynosi `sqrt(epsilon_double)*geometryScale`. Jeżeli dodanie kroku nie zmienia współrzędnej, `nextafter` wyznacza najbliższą większą reprezentowalną wartość. Obliczenia wykorzystują rzeczywiste przesunięcie. Różnice kątów G1 są sprowadzane modulo `2π`; po perturbacji przywracane są pozycje i wygięcia.
 
-Do pomiaru pochodnej program przesuwa na chwilę jedną współrzędną, ponownie liczy błąd i dzieli jego zmianę przez wielkość przesunięcia. Jest to metoda różnic skończonych. Po pomiarze przywraca poprzedni stan. Krok zależy od precyzji `double` i skali współrzędnych; używana jest faktycznie reprezentowana zmiana, a w razie potrzeby `nextafter`. Różnice kątów uwzględniają przejście przez `±π`.
+Długości i C1 są normalizowane skalą; równoległość i kąty pozostają bezwymiarowe. Skala uwzględnia cięciwy, uchwyty, zadane długości i strzałki łuków. Grupy zależności ograniczają ocenę reszt do wierszy zależnych od danej współrzędnej, z kontrolą aktualności wektora bazowego.
 
-Grupy reszt zapamiętują zależności od punktów. Dla kolumny przeliczane są tylko zależne reszty, z kontrolą aktualności wektora bazowego. Każda próbka odtwarza zmienione pozycje i wygięcia. Łuki są dopasowywane przed oceną próbki. Macierz korekty jest gęsta; nie jest to solver dla scen z tysiącami obiektów.
+### Parametry i statusy
 
-Skala obejmuje m.in. długości cięciw, uchwyty, zadane długości i strzałkę łuku. Użycie strzałki zamiast samego promienia zapobiega sztucznemu zawyżaniu skali przy prawie prostym łuku.
-
-### Parametry i wynik
-
-Aktualne wartości domyślne z `SolveOptions`:
-
-| Parametr | Wartość i znaczenie |
+| Parametr `SolveOptions` | Wartość domyślna |
 | --- | --- |
-| `maxIterations` | Maksymalnie 10 000 zaakceptowanych poprawek położeń punktów |
-| `maxFixedEndpointIterations` | Maksymalnie 50 poprawek z nieruchomymi końcami Béziera; wliczają się do łącznego limitu 10 000 |
+| `maxIterations` | 10000 zaakceptowanych poprawek |
+| `maxFixedEndpointIterations` | 50 poprawek z nieruchomymi końcami Béziera, w ramach wspólnego limitu |
 | `lengthTolerance` | `1e-6` w jednostkach świata |
-| `parallelTolerance` | `1e-6` dla bezwzględnego znormalizowanego iloczynu wektorowego |
+| `parallelTolerance` | `1e-6` dla modułu znormalizowanego iloczynu wektorowego |
 | `g1Tolerance` | `1e-6` radiana |
 | `c1Tolerance` | `1e-6` dla każdej składowej różnicy pochodnych |
 
-Jeśli próba z nieruchomymi końcami Béziera nie znajdzie rozwiązania, program wraca do tego samego stanu wejściowego i próbuje ponownie, tym razem pozwalając końcom się przesuwać. Korzysta z pozostałej części wspólnego limitu. W obu próbach uchwyt pozostaje przypięty do pozycji wyznaczonej przez mysz.
-
-Wygięcie łuku jest obliczane bez iteracyjnego przesuwania punktów, więc nie zużywa tego limitu. Limit iteracji określa liczbę poprawek, a nie czas obliczeń.
-
-`SolveResult` zawiera status i liczbę zaakceptowanych korekt. Statusy: `Converged`, `InvalidInput`, `NoConvergence`, `DegenerateGeometry`. Walidator dokumentu osobno zwraca listę problemów strukturalnych. Aplikacja pokazuje użytkownikowi komunikat o nieuzyskaniu spójnego stanu i zachowuje poprawny dokument.
+Dopasowanie łuków nie zużywa iteracji korekty współrzędnych. Próby z nieruchomymi i ruchomymi końcami Béziera dzielą wspólny limit. `SolveResult` zawiera liczbę poprawek i status `Converged`, `InvalidInput`, `NoConvergence` albo `DegenerateGeometry`. Niezbieżna próba nie zmienia dokumentu wejściowego. Dodatkowa ścieżka `solveWithJacobian` umożliwia testowanie z zadanymi macierzami.
 
 ## 9. Budowanie, testy i przekazanie programu
 
-Gotowy program znajduje się w [dist/windows-x64/Projecr1_GK.exe](../dist/windows-x64/Projecr1_GK.exe). Na 64-bitowym Windows 10/11 wystarczy pobrać ten plik i uruchomić go dwukrotnym kliknięciem. Nie trzeba kompilować projektu ani instalować narzędzi programistycznych.
+Wersja wykonywalna dla Windows 10/11 x64 znajduje się w [dist/windows-x64/Projecr1_GK.exe](../dist/windows-x64/Projecr1_GK.exe). Biblioteki C++ są dołączone statycznie w Release (`/MT`). Uruchomienie wymaga EXE i bibliotek systemowych Windows, bez osobnego pakietu Visual C++ Redistributable. Pomoc, dokumentacja i ikony są osadzone w zasobach EXE, a scena początkowa powstaje w kodzie programu.
 
-Do budowania ze źródeł potrzebne są Visual Studio z obsługą aplikacji klasycznych C++, toolset **v145**, Windows SDK 10 i MSBuild obsługujący `.slnx`. Projekt używa C++20. Konfiguracje obejmują Debug/Release oraz x64/Win32.
-
-W **Developer PowerShell dla Visual Studio**, w katalogu projektu:
+Budowanie wymaga Visual Studio z narzędziami aplikacji klasycznych C++, zestawu **v145**, Windows SDK 10 i MSBuild obsługującego `.slnx`. Dostępne konfiguracje to Debug/Release i x64/Win32. Polecenia w Developer PowerShell dla Visual Studio:
 
 ```powershell
 msbuild .\Projecr1_GK.slnx /m /p:Configuration=Release /p:Platform=x64
 .\x64\Release\Projecr1_GK.exe
 ```
 
-Debug buduje się analogicznie z `/p:Configuration=Debug`. Do prezentacji wydajności należy użyć Release. Zależności projektu automatycznie budują `cad_core`.
-
-Testy można zbudować i uruchomić razem:
+Skrypt testowy odnajduje MSBuild, buduje oba zestawy i uruchamia je kolejno:
 
 ```powershell
 .\tests\run-tests.cmd -Configuration Debug
 .\tests\run-tests.cmd -Configuration Release
 ```
 
-Zestaw przenośny sprawdza model, geometrię, relacje, Jacobian, solver, sesję, hit testy i rasteryzację. Zestaw WinAPI sprawdza rzeczywistą procedurę okna, dialog pomocy, zasoby, przyciski, DIB i prezentację. Okna testów są ukryte, a modalne ostrzeżenia przechwytywane. Szczegółowy zakres i bieżąca liczba przypadków: [tests/README.md](../tests/README.md).
+Zestaw przenośny zawiera **760 przypadków w 40 zestawach**, a zestaw Windows **49 przypadków integracyjnych**. Weryfikacja obejmuje model, geometrię, serializację, solver, edycję i rasteryzację oraz rzeczywistą procedurę okna, dialogi, zasoby i DIB. Kontrole pozostają aktywne w Release. Zakres określa [dokumentacja testów](../tests/README.md).
 
-Pomoc, pełna dokumentacja, ikony i scena początkowa są wkompilowane do EXE. W konfiguracji Release biblioteki uruchomieniowe C++ są dołączone statycznie (`/MT`), więc do uruchomienia wystarczy sam EXE i biblioteki systemowe Windows. Nie jest potrzebny osobny pakiet Microsoft Visual C++ Redistributable. Zmiany sceny nie są zapisywane między uruchomieniami.
-
-Po zmianach źródeł lub dokumentacji odśwież wersję do pobrania:
+Aktualizacja dystrybucji odbywa się poleceniem:
 
 ```powershell
 .\scripts\build-release.cmd
 ```
 
-Skrypt odnajduje MSBuild, buduje aplikację Release x64 i kopiuje ją do `dist/windows-x64/`. Aktualizuje też `SHA256SUMS.txt`, którym można sprawdzić zgodność pobranego pliku. Skrypt wymaga narzędzi do kompilacji i nie wykonuje commitów. Aktualny EXE oraz sumę kontrolną dołączaj do commita razem ze zmianami źródeł.
+Skrypt buduje Release x64, kopiuje EXE do `dist/windows-x64/` i aktualizuje `SHA256SUMS.txt`. Nie wykonuje commitów ani operacji push. Zmianie źródeł lub dokumentacji dołączanej do zasobów powinna towarzyszyć aktualizacja dystrybucji.
 
-Przekazując cały projekt, dołącz również źródła, projekty Visual Studio, ikony, zasób `.rc`, ten dokument i opis testów.
-
-Wcześniejsze plany rozbudowy znajdują się w [dokumentach architektury](architecture/README.md). Opis bieżącego zachowania i granic implementacji stanowi niniejszy dokument.
+Materiał projektu obejmuje źródła, projekty Visual Studio, zasoby graficzne i `.rc`, dokumentację, testy oraz wersję wykonywalną. Pliki `.cadscene` są niezależnymi dokumentami użytkownika. Release jest konfiguracją przeznaczoną do prezentacji i oceny wydajności.
 
 ## 10. Scenariusz prezentacji
 
-1. Uruchom Release: pokaż dwie figury, `L=180`, `L=120`, `L=160` oraz pary `P1` i `P2`.
-2. Przeciągnij oba uchwyty lewego Béziera. W menu jego końców pokaż C1 i G1. Anuluj gest przez Esc, aby wrócić do punktu wyjścia.
-3. Przeciągnij wierzchołek prawego łuku i pokaż zachowanie styczności. Sprawdź, że menu przy łuku wyłącza C1.
-4. Przesuń całą figurę za wnętrze; długości, wygięcia i równoległości pozostają zachowane.
-5. Zmień długość odcinka, usuń jedną równoległość i dodaj ją ponownie przez wybór dwóch odcinków.
-6. Przełącz GDI/Bresenham. Uchwyty i geometria pozostają edytowalne w obu trybach.
-7. Podziel Béziera i łuk; porównaj zachowanie kształtu. Usuń dodany wierzchołek i pokaż aktualizację relacji.
-8. Wywołaj F1, zmień temat, powiększ pomoc, wróć do sceny i zamknij pomoc przez Esc.
+| Etap | Funkcjonalność | Oczekiwany rezultat |
+| --- | --- | --- |
+| 1 | Scena demonstracyjna | Dwie figury, długości 180/120/160 i pary P1/P2 |
+| 2 | Ruch uchwytów Béziera i anulowanie przez Esc | Zachowanie C1/G1 i odtworzenie stanu sprzed gestu |
+| 3 | Edycja końca łuku i wybór ciągłości | Zachowanie G1; brak C1 przy łuku |
+| 4 | Translacja figury | Zachowanie kształtu i relacji bez ruchu drugiego obiektu |
+| 5 | Zmiana długości i edycja równoległości | Aktualizacja geometrii i oznaczeń relacji |
+| 6 | GDI/Bresenham/Wu i grubość jednej krawędzi | Zmiana prezentacji bez zmiany geometrii |
+| 7 | Podział Béziera i łuku, usunięcie wierzchołka | Wynik zgodny z regułami zmian topologii |
+| 8 | Zapis i odczyt sceny | Odtworzenie geometrii, grubości i relacji |
+| 9 | Pomoc i dokumentacja | Niezależne okna z treścią dostępną bez plików zewnętrznych |
 
-Operacje demonstracyjne mogą zmieniać późniejszą geometrię i relacje. Gdy potrzebna jest identyczna scena początkowa, uruchom program ponownie.
+Operacje mogą zmieniać stan wykorzystywany w kolejnych etapach. Ponowne uruchomienie odtwarza scenę demonstracyjną, a wczytanie pliku umożliwia powrót do zapisanego wariantu.

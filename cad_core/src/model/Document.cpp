@@ -121,6 +121,9 @@ namespace cad {
                     continue;
                 }
 
+                if (edge->strokeWidth < 1 || edge->strokeWidth > 32)
+                    issues.push_back({ValidationError::InvalidStrokeWidth, polygonId, {}, edgeId});
+
                 // An edge can reference missing endpoints even when the polygon's
                 // own vertex list contains only valid IDs.
                 const Vertex* start = findVertex(edge->start);
@@ -176,6 +179,14 @@ namespace cad {
 
         return issues;
     }
+    bool Document::setEdgeStrokeWidth(EdgeId id, int width)
+    {
+        const auto edge = edges.find(id);
+        if (edge == edges.end() || width < 1 || width > 32) return false;
+        edge->second.strokeWidth = width;
+        return true;
+    }
+
     bool Document::moveVertex(VertexId id, const Vec2 &position)
     {
         if (!std::isfinite(position.x) || !std::isfinite(position.y))
@@ -351,7 +362,7 @@ namespace cad {
         vertices.emplace(newVertexId, Vertex{newVertexId, midpoint, midpointContinuity});
         try
         {
-            edges.emplace(newEdgeId, Edge{newEdgeId, newVertexId, edgeIt->second.end, secondGeometry});
+            edges.emplace(newEdgeId, Edge{newEdgeId, newVertexId, edgeIt->second.end, secondGeometry, edgeIt->second.strokeWidth});
         }
         catch (...)
         {
@@ -425,7 +436,7 @@ namespace cad {
         updatedEdges.erase(updatedEdges.begin() + offset);
 
         // The only map allocation happens before removing any stored entity.
-        edges.emplace(newEdgeId, Edge{newEdgeId, previousId, nextId});
+        edges.emplace(newEdgeId, Edge{newEdgeId, previousId, nextId, LineSegment{}, incomingIt->second.strokeWidth});
         owner->vertices.swap(updatedVertices);
         owner->edges.swap(updatedEdges);
 

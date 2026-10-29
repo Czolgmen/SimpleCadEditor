@@ -1,70 +1,38 @@
-# Ograniczenia i solver
+# 03. Ograniczenia i solver
 
-[Spis treści](README.md)
+[Spis dokumentacji architektury](README.md)
 
-Bieżący `solveConstraints` wspólnie rozwiązuje długości i równoległość: obejmuje walidację, oddzielne tolerancje, zgodne skalowanie błędów i zmiennych, tłumienie, dobór kroku, algebrę liniową i numeryczne [obliczanie Jacobiego](09-jacobian.md). `solveFixedLengths` wywołuje tę samą pętlę z pustą listą równoległości. Poniższy opis obejmuje także docelową ciągłość i graf zależności. Prototyp przyjmuje skończone długości docelowe większe od zera, przekazuje relacje przez `span` i rozwiązuje wszystkie przekazane relacje. `Document` przechowuje pary równoległości i usuwa relacje zmienionych krawędzi przy zmianie topologii. Aplikacja dodaje parę przez wybór pierwszej krawędzi w menu PPM i kliknięcie drugiej, zatwierdzając ją po sukcesie wspólnego solvera. Wybraną parę można usunąć z podmenu krawędzi bez zmiany geometrii i pozostałych relacji. Solver obejmuje już G1/C1 Bézierów i G1 łuków wraz z długościami i równoległością. Wybór dotkniętej składowej grafu pozostaje możliwą optymalizacją.
+## Reprezentacja warunków
 
-`Document::addParallel` waliduje parę przez `parallelError` i zapisuje ją bez uruchamiania solvera. Niezerowy błąd jest poprawnym wejściem do magazynu. Para jest nieuporządkowana: `(A, B)` i `(B, A)` są duplikatami, których dodanie zwraca `false`. Jedna krawędź może wystąpić w wielu różnych parach. `removeParallel` wyszukuje obie kolejności i usuwa wyłącznie wskazaną parę; brak pary zwraca `false`. Usuwanie nie wymaga poprawnej geometrii. Odczyt przez `getParallelConstraints` zwraca niemodyfikowalny span, który należy pobrać ponownie po zmianie magazynu lub podmianie dokumentu.
+[`FixedLengthConstraint`](../../cad_core/include/cad_core/constraints/FixedLengthConstraint.h) wskazuje odcinek i dodatnią długość docelową. [`ParallelConstraint`](../../cad_core/include/cad_core/constraints/ParallelConstraint.h) wskazuje dwa różne odcinki, także należące do różnych wielokątów. Ciągłość jest ustawieniem wierzchołka; aktywne połączenia wyznacza `ContinuityJoins`.
 
-## Jeden układ zależności
+| Warunek | Reszta równania | Liczba składowych |
+| --- | --- | --- |
+| Długość | `length(B-A)-L` | 1 |
+| Równoległość | `cross(u/length(u),v/length(v))` | 1 |
+| G0 | Wspólny wierzchołek zapewniony przez model | 0 |
+| G1 | `atan2(cross(TinUnit,ToutUnit),dot(TinUnit,ToutUnit))` | 1 |
+| C1 | `Tout-Tin` | 2 |
 
-Solver obejmuje długości i równoległość **wyłącznie odcinków**, a osobno równania ciągłości Bézierów oraz warunki dotyczące łuków. Krzywe i półokręgi nie otrzymują ograniczeń długości ani równoległości. Dodanie takiej relacji do krzywej jest odrzucane przez walidację.
+G1 wymaga niezerowych stycznych o zgodnym zwrocie. Równoległość dopuszcza zwroty przeciwne. Długość i równoległość są dostępne wyłącznie dla odcinków. Warunki C1 odnoszą się do lokalnego parametru każdego segmentu w przedziale `[0,1]`.
 
-Wspólne rozwiązywanie nadal ma znaczenie: krzywa i sąsiedni odcinek współdzielą wierzchołek. Ciągłość może więc pośrednio wpływać na odcinek mający ograniczenie długości lub równoległości. Rozdzielenie tych operacji na niezależne procedury mogłoby prowadzić do sytuacji, w której poprawa styczności psuje długość odcinka, a poprawa długości ponownie psuje styczność.
+## Przebieg rozwiązania
 
-Zmienne numeryczne to współrzędne wierzchołków i punktów kontrolnych Béziera. Parametr bulge łuków jest dopasowywany analitycznie przez updateArcBulges przed oceną kandydata i każdej próbki Jacobiego; nie ma osobnej kolumny w macierzy. G0/G0 zachowuje znak półokręgu, a przy dwóch łukach G1 wygięcie łuku o mniejszym ID pozostaje referencją. Parametry takie jak zadana długość są stałymi. Końce krzywych nie mają osobnych współrzędnych poza wierzchołkami.
+Publiczne `solveConstraints` uruchamia w [`ConstraintSolver.cpp`](../../cad_core/src/solver/ConstraintSolver.cpp) tłumioną metodę Gaussa–Newtona z krokiem typu Levenberga–Marquardta. Niewiadome obejmują współrzędne uczestniczących w relacjach wierzchołków i punktów kontrolnych. Punkty przypięte są wyłączone z niewiadomych.
 
-Solver zbiera punkty występujące w przekazanych relacjach oraz aktywnych połączeniach ciągłości, także między wielokątami. Grupy reszt zapamiętują zależności od punktów, aby Jacobian przeliczał tylko zależne wiersze. Obecna implementacja nie wydziela osobnego podproblemu dotkniętej spójnej składowej.
+Po analitycznym dopasowaniu łuków obliczane są reszty, skala geometrii i [numeryczna macierz Jacobiego](09-jacobian.md). Dla znormalizowanych danych krok jest wyznaczany z układu:
 
-## Równania
+```text
+(J*Jᵀ + λ*I)*y = -r
+delta = Jᵀ*y
+```
 
-Dla odcinka przyjmujemy `d = end - start`. Pierwsze dwa równania dotyczą wyłącznie krawędzi typu `LineSegment`; pozostałe opisują ciągłość i geometrię krzywych:
+Gęsty układ rozwiązuje eliminacja Gaussa z częściowym wyborem elementu głównego. Próba pełnego kroku jest w razie potrzeby skracana przez backtracking; kolejne nieudane próby zwiększają tłumienie. Niemal prostopadłe odcinki mogą uruchomić deterministyczne przeszukiwanie współrzędnych. Każda przyjmowana poprawka musi spełniać tolerancje albo zmniejszać normę reszt.
 
-- Zadana długość: `length(d) - L = 0`, z wymaganiem `L > epsilon`.
-- Równoległość: `cross(unit(d1), unit(d2)) = 0`. Kierunki przeciwne są dozwolone.
-- G1: zgodność kierunków stycznych wzdłuż obiegu wielokąta; zerowy iloczyn wektorowy oraz dodatni iloczyn skalarny. Sama współliniowość dopuszczałaby zawrócenie krzywej.
-- C1: równość dwóch składowych wektorów pochodnych po obu stronach wierzchołka.
-- Łuk G0/G0: `bulge = +1` albo `bulge = -1`, zgodnie z zapisaną stroną łuku.
+Normalizacja długości i C1 służy ocenie kroku. Warunek końcowy korzysta z osobnych tolerancji surowych reszt. Parametry domyślne i szczegóły algorytmów opisuje [rozdział solvera](../documentation.md#8-mechanizm-ograniczeń-i-solver).
 
-G0 wynika ze współdzielenia wierzchołka. Regułę najwyżej jednego końca G1 łuku sprawdza walidator przed uruchomieniem solvera. Dodatni zwrot stycznych i brak degeneracji są warunkami dopuszczalności kandydata, a nie wyłącznie równaniami do minimalizacji.
+## Zatwierdzanie i diagnostyka
 
-Reszty odległościowe skalujemy charakterystycznym rozmiarem rozwiązywanej geometrii. Reszty kierunkowe są bezwymiarowe. Wynik weryfikujemy również w jednostkach świata, oddzielnie dla błędu pozycji, długości i kąta. Tolerancje modelu nie zależą od powiększenia widoku.
+Obliczenia przebiegają na kandydacie dokumentu. Wynik zastępuje wejście dopiero po zbieżności, walidacji i kontroli dokładnego położenia punktów przypiętych. `SolveResult` rozróżnia `Converged`, `InvalidInput`, `NoConvergence` oraz `DegenerateGeometry`.
 
-## Proponowany algorytm startowy
-
-Dla rozmiaru sceny z zadania proponujemy iteracyjny solver numeryczny z tłumieniem, oparty na linearyzacji równań. To prototyp wymagający sprawdzenia na scenach testowych, a nie deklaracja niezawodności dowolnego układu CAD.
-
-1. Zbuduj zmienne i równania dotkniętej składowej.
-2. Wstaw dokładne położenie elementu prowadzonego przez użytkownika i usuń jego współrzędne ze zbioru niewiadomych.
-3. Rozpocznij od ostatniego poprawnego podglądu. Przy przeciąganiu przenieś też powiązane uchwyty o przyrost ruchu wierzchołka, aby uzyskać rozsądny punkt startowy.
-4. Oblicz wektor reszt `F` i jakobian `J`. W pierwszej wersji wystarczą różnice skończone z krokiem dopasowanym do skali zmiennej.
-5. Wyznacz tłumioną korektę minimalnej normy, np. przez rozwiązanie `(J*J^T + lambda*I)y = -F`, a następnie `delta = J^T*y`. Zmienne i równania muszą być wcześniej przeskalowane.
-6. Dobierz krok i tłumienie tak, aby zmniejszyć błąd i zachować dopuszczalną geometrię. W razie odrzuconego kroku zmniejsz go lub zwiększ tłumienie.
-7. Zakończ po spełnieniu tolerancji albo osiągnięciu limitu iteracji. Sprawdź ponownie wszystkie relacje, skończoność współrzędnych i warunki geometryczne.
-
-Na początku wystarczy niewielki moduł macierzy gęstych i rozwiązania układu liniowego z wyborem elementu głównego. Trzymamy go oddzielnie od geometrii i weryfikujemy na znanych układach. Gdy prototyp pokaże problemy kondycjonowania lub skali, można podmienić ten moduł na implementację QR/SVD bez zmiany dokumentu i API edytora.
-
-Tłumienie pomaga przy nadmiarowych równaniach, ale nie zastępuje weryfikacji wyniku. Minimalna korekta w pojedynczej iteracji ogranicza niepotrzebne ruchy; nie gwarantuje globalnie najbliższego rozwiązania. Nie dodajemy miękkiej kary za ruch do kryterium akceptacji kosztem niespełnionych relacji.
-
-W obecnym prototypie długości dzielimy przez wspólną skalę geometrii, a błędy równoległości pozostają bezwymiarowe. Tolerancja długości jest w jednostkach świata; `parallelTolerance` dotyczy bezwzględnej wartości znormalizowanego iloczynu wektorowego, czyli sinusa kąta. Przy nieudanej korekcie blisko prostopadłości solver może wykonać mały próbny ruch pojedynczej wolnej współrzędnej w obu kierunkach, ze zmniejszaniem kroku. Sinus ma w tym miejscu stacjonarne maksimum, więc sam Jacobian może dać zerowy krok. Próbę przyjmujemy wyłącznie przy spadku łącznej normy, zachowaniu skończonej geometrii i niezerowych krawędzi. Ruch liczy się do limitu iteracji, nie obejmuje prowadzonego punktu i nie zatwierdza dokumentu przed spełnieniem wszystkich relacji.
-
-Zerowy kierunek odcinka uczestniczącego w równoległości zwraca `DegenerateGeometry`; nieistniejące odwołania, relacja krawędzi z samą sobą, błędne parametry i przepełnienie wejściowych kierunków zwracają `InvalidInput`. Każdy sukces jest sprawdzany ponownie przed podmianą dokumentu. Niepowodzenie zachowuje pozycje, topologię i przechowywane relacje.
-
-SolveResult zwraca status `Converged`, `InvalidInput`, `NoConvergence` lub `DegenerateGeometry` oraz liczbę zaakceptowanych korekt. Nie zawiera listy reszt ani identyfikatorów niespełnionych relacji. Brak zbieżności nie jest dowodem matematycznej sprzeczności układu.
-
-## Priorytet ruchu użytkownika
-
-- Przesuwany wierzchołek lub uchwyt ma pozycję dokładnie wyznaczoną przez kursor w układzie świata. Solver nie może przyciągać go do innego miejsca.
-- Przy ruchu uchwytu publiczne przeciążenie `solveConstraints(ControlPointRef)` najpierw blokuje oba wierzchołki jego segmentu. Prywatna pętla usuwa te wierzchołki z niewiadomych i sprawdza przed zatwierdzeniem, że ich pozycje są dokładnie zachowane. Ta próba otrzymuje najwyżej `min(maxIterations, maxFixedEndpointIterations)` iteracji; aktualnie domyślny limit preferencji wynosi 50, a całkowity limit wynosi 10 000. Wartość 0 pomija korekty z zablokowanymi końcami. Jeśli próba nie uzyska zbieżności i pozostaje budżet iteracji, ponawiamy obliczenia od tego samego dokumentu z odblokowanymi końcami. Obie próby dzielą `maxIterations`, a wynik sumuje zaakceptowane poprawki obu prób. Uchwyt pozostaje dokładnie przypięty w obu wariantach. Niepoprawne wejście jest odrzucane bez drugiej próby; nieudane obliczenia nie zmieniają dokumentu. Ruch końców jest więc wariantem rezerwowym. Oddzielny limit preferencji zapobiega zużyciu wszystkich iteracji na trudny problem z unieruchomionymi końcami. Jest limitem liczby poprawek, nie czasu obliczeń.
-- Przesuwanie całego wielokąta narzuca tę samą translację wszystkim jego wierzchołkom i uchwytom oraz zachowuje parametry `bulge` jego łuków. Zachowane są długości, kierunki i lokalna ciągłość, a równoległości między figurami nadal obowiązują. Inne figury pozostają na miejscu; ta operacja nie uruchamia solvera.
-- Relacji nie usuwamy automatycznie w celu ułatwienia przeciągania. Osobną regułą jest konwersja odcinka na krzywą: usuwa jego ograniczenia długości i równoległości w ramach transakcji.
-
-Nie dla każdego kursora i zestawu blokad istnieje rozwiązanie. Przy odrzuconym ruchu na scenie pozostaje ostatni poprawny podgląd z ostrzeżeniem; nie jest pokazywany niespójny kandydat pod kursorem. Zwolnienie przycisku zachowuje ten podgląd, a Esc przywraca stan sprzed całego gestu. To jawna polityka dla sytuacji, w której nie da się jednocześnie zachować wszystkich warunków zadania.
-
-## Transakcje
-
-Dodanie relacji, zmiana ciągłości, konwersja krawędzi i zmiana topologii działają na kandydacie dokumentu. Zatwierdzamy go dopiero po walidacji i rozwiązaniu zależności. Nieudana operacja nie zostawia połowy zmian ani osieroconych ID.
-
-Konwersja odcinka na Béziera lub łuk najpierw usuwa z kandydata wszystkie relacje długości i równoległości wskazujące tę krawędź. Dotyczy to całej relacji równoległości, także z odcinkiem innego wielokąta. Pozostałe relacje innych odcinków nadal obowiązują. Dopiero potem ustalamy ciągłość i rozwiązujemy zmieniony układ. Nieudana konwersja przywraca geometrię oraz usunięte relacje; powrót krzywej do odcinka nie odtwarza ich automatycznie.
-
-Gest przeciągania przechowuje stan początkowy, ostatni poprawny podgląd oraz bieżący kandydat. `Esc` przywraca stan początkowy. Gest ma stały punkt odniesienia dla translacji, dzięki czemu nie sumujemy błędów kolejnych przyrostów myszy.
+Podczas przeciągania nieudana próbka pozostawia ostatni poprawny podgląd. Polecenie edycyjne jest zatwierdzane w całości albo odrzucane. Brak zbieżności nie dowodzi sprzeczności matematycznej: może również wynikać z degeneracji, uwarunkowania lub ograniczeń lokalnej metody numerycznej. Solver nie gwarantuje rozwiązania jedynego ani globalnie najbliższego.

@@ -10,5 +10,6 @@ namespace cad
         VertexId start;
         VertexId end;
         EdgeGeometry geometry = LineSegment{};
+        int strokeWidth = 2; // Screen pixels; persistent appearance, not a geometric constraint.
     };
 }

@@ -93,6 +93,7 @@
     <ClInclude Include="include\cad_core\model\EdgeTangents.h" />
     <ClInclude Include="include\cad_core\model\Polygon.h" />
     <ClInclude Include="include\cad_core\model\Document.h" />
+    <ClInclude Include="include\cad_core\io\SceneIO.h" />
     <ClInclude Include="include\cad_core\model\Validation.h" />
     <ClInclude Include="include\cad_core\solver\ConstraintSolver.h" />
     <ClInclude Include="include\cad_core\solver\SolverPoint.h" />
@@ -108,6 +109,7 @@
     <ClCompile Include="src\geometry\Bezier.cpp" />
     <ClCompile Include="src\geometry\Arc.cpp" />
     <ClCompile Include="src\model\Document.cpp" />
+    <ClCompile Include="src\io\SceneIO.cpp" />
     <ClCompile Include="src\model\EdgeSampling.cpp" />
     <ClCompile Include="src\model\EdgeTangents.cpp" />
     <ClCompile Include="src\model\ContinuityJoins.cpp" />

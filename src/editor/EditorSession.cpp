@@ -302,6 +302,21 @@ namespace cad::editor
         return std::isfinite(length) ? std::optional<double>{length} : std::nullopt;
     }
 
+    std::optional<int> EditorSession::selectedEdgeStrokeWidth() const
+    {
+        const auto* edge = selection_.edge ? document_.findEdge(*selection_.edge) : nullptr;
+        return edge ? std::optional<int>{edge->strokeWidth} : std::nullopt;
+    }
+
+    bool EditorSession::setSelectedEdgeStrokeWidth(int width)
+    {
+        if (!selection_.edge || !document_.setEdgeStrokeWidth(*selection_.edge, width)) return false;
+        // Appearance does not require solving constraints or moving any point.
+        cancelParallelSelection();
+        pointerUp();
+        return true;
+    }
+
     std::optional<double> EditorSession::selectedFixedLength() const
     {
         if (!selection_.edge)

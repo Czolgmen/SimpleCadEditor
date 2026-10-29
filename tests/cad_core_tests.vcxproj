@@ -93,6 +93,8 @@
     <ClCompile Include="solver\ContinuitySolverTests.cpp" />
     <ClCompile Include="solver\ArcSolverTests.cpp" />
     <ClCompile Include="core\DocumentTests.cpp" />
+    <ClCompile Include="core\SceneIOTests.cpp" />
+    <ClCompile Include="core\EdgeStyleTests.cpp" />
     <ClCompile Include="core\DocumentArcTests.cpp" />
     <ClCompile Include="core\ArcContinuityTests.cpp" />
     <ClCompile Include="core\ArcConversionTests.cpp" />
@@ -110,6 +112,8 @@
     <ClCompile Include="geometry\BezierTests.cpp" />
     <ClCompile Include="geometry\ArcTests.cpp" />
     <ClCompile Include="render\BresenhamTests.cpp" />
+    <ClCompile Include="render\WuTests.cpp" />
+    <ClCompile Include="..\src\render\Wu.cpp" />
     <ClCompile Include="..\src\render\Bresenham.cpp" />
     <ClCompile Include="render\LineClippingTests.cpp" />
     <ClCompile Include="..\src\render\LineClipping.cpp" />
@@ -129,6 +133,7 @@
     <ClInclude Include="TestSupport.h" />
     <ClInclude Include="CurveTestSupport.h" />
     <ClInclude Include="..\src\render\Bresenham.h" />
+    <ClInclude Include="..\src\render\Wu.h" />
     <ClInclude Include="..\src\render\LineClipping.h" />
     <ClInclude Include="..\src\editor\HitTester.h" />
     <ClInclude Include="..\src\editor\EditorSession.h" />
